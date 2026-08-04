@@ -1,63 +1,124 @@
+<div align="center">
+
 # opencode-desktop-notify
 
-Plugin de OpenCode que muestra un toast del sistema y un popup persistente cuando
-una tarea termina, falla, pide permiso o necesita una respuesta. El popup puede
-restaurar y enfocar la terminal con un clic.
+**Notificaciones claras para saber cuándo OpenCode terminó, falló o necesita tu atención.**
 
-Requiere OpenCode `1.18.11` o posterior. La integración principal está probada
-en Windows; macOS y Linux usan las herramientas nativas disponibles.
+[![npm](https://img.shields.io/npm/v/opencode-desktop-notify?label=npm&color=5b5bd6)](https://www.npmjs.com/package/opencode-desktop-notify)
+[![downloads](https://img.shields.io/npm/dm/opencode-desktop-notify?label=descargas&color=0f766e)](https://www.npmjs.com/package/opencode-desktop-notify)
+[![license](https://img.shields.io/badge/licencia-MIT-111827)](./LICENSE)
+[![OpenCode](https://img.shields.io/badge/OpenCode-1.18.11%2B-f59e0b)](https://opencode.ai/docs/plugins/)
 
-## Instalación
+Toast del sistema · Popup persistente · Sonido · Título de terminal
 
-Agregar el paquete al archivo global `~/.config/opencode/opencode.json` o al
-`opencode.jsonc` existente:
+`Windows` · `Linux` · `macOS`
+
+</div>
+
+---
+
+`opencode-desktop-notify` te avisa cuando una sesión termina, encuentra un error,
+solicita un permiso o espera una respuesta. Cada evento puede usar uno o varios
+canales y tener sus propios mensajes, sonidos y colores.
+
+> [!TIP]
+> No necesitas ejecutar `npm install`. OpenCode descarga los plugins npm
+> automáticamente al iniciar.
+
+## Lo más importante
+
+| Función | Comportamiento |
+| --- | --- |
+| Cuatro canales combinables | Toast nativo, sonido, popup y parpadeo del título |
+| Estilos por evento | Verde al completar, rojo en errores, ámbar para permisos e índigo para preguntas |
+| Popup persistente | En Windows, permanece visible hasta que vuelves o haces clic |
+| Integración con la terminal | En Windows, un clic restaura y enfoca la terminal sin minimizarla |
+| Cancelaciones silenciosas | Pulsar `Esc` para abortar no genera avisos ni falsos `complete` |
+| Menos ruido | Los subagentes se omiten por defecto y existe cooldown por tipo de evento |
+| Configuración local | No requiere cuenta, servicio externo ni telemetría propia |
+
+## Inicio rápido
+
+### 1. Requisitos
+
+- OpenCode `1.18.11` o posterior.
+- Windows 10/11, una distribución Linux con escritorio o macOS.
+- En Windows, Windows PowerShell 5.1, incluido de fábrica en versiones compatibles.
+
+### 2. Activa el plugin
+
+Abre la configuración global de OpenCode:
+
+| Sistema | Ruta habitual |
+| --- | --- |
+| Windows | `%USERPROFILE%\.config\opencode\opencode.jsonc` |
+| Linux | `~/.config/opencode/opencode.jsonc` |
+| macOS | `~/.config/opencode/opencode.jsonc` |
+
+También puedes usar `opencode.json` si ese es el archivo que ya tienes. Añade el
+paquete a la propiedad `plugin`:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-desktop-notify"]
-}
-```
-
-OpenCode instala automáticamente los plugins declarados como paquetes npm.
-Reiniciar OpenCode después de modificar su configuración.
-
-Sin configuración adicional se activan `system`, `sound` y `popup` para todos
-los eventos; `titleFlash` queda desactivado.
-
-## Eventos
-
-| Evento | Origen en OpenCode |
-| --- | --- |
-| `complete` | `session.idle` |
-| `error` | `session.error` |
-| `permission` | `permission.asked` |
-| `question` | `tool.execute.before` con `tool === "question"` |
-
-Las sesiones con `parentID` se consideran subagentes y no notifican por defecto.
-
-## Configuración opcional
-
-Crear `~/.config/opencode/notify.json` usando `notify.example.json` como base.
-Todos los campos son opcionales y se combinan con los valores predeterminados.
-
-También puede indicarse otra ruta mediante `OPENCODE_NOTIFY_CONFIG` o mediante
-las opciones del plugin:
-
-```jsonc
-{
   "plugin": [
-    ["opencode-desktop-notify", { "configPath": "C:/ruta/notify.json" }]
+    "opencode-desktop-notify"
   ]
 }
 ```
 
-La configuración se carga una vez al iniciar. Reiniciar OpenCode después de
-editarla.
+Si ya utilizas otros plugins, conserva sus entradas:
 
-### Canales
+```jsonc
+{
+  "plugin": [
+    "mi-otro-plugin",
+    "opencode-desktop-notify"
+  ]
+}
+```
 
-Cada evento admite estos interruptores:
+### 3. Reinicia OpenCode
+
+OpenCode instalará el paquete con Bun y lo guardará en su caché. No hace falta
+crear `notify.json` para empezar: todos los eventos activan toast, sonido y popup
+con valores predeterminados; el parpadeo del título queda apagado.
+
+Completa una respuesta corta para verificarlo.
+
+### 4. Actualiza una instalación existente
+
+OpenCode conserva los plugins npm en caché. Los usuarios nuevos reciben la
+versión más reciente, pero una instalación existente puede seguir usando una
+versión anterior. Para forzar esta actualización, indica la versión publicada:
+
+```jsonc
+{
+  "plugin": [
+    "opencode-desktop-notify@0.2.0"
+  ]
+}
+```
+
+Reinicia OpenCode después del cambio. En una versión futura, reemplaza `0.2.0`
+por la versión que quieras instalar. Como alternativa, elimina el paquete de la
+caché de OpenCode y conserva el nombre sin versión.
+
+## Qué se notifica
+
+| Evento | Cuándo ocurre | Detalle disponible |
+| --- | --- | --- |
+| `complete` | La ejecución terminó correctamente | Nombre de la sesión |
+| `error` | La ejecución terminó con un error real | Mensaje del error |
+| `permission` | OpenCode solicita autorización | Nombre del permiso |
+| `question` | OpenCode necesita una respuesta | Nombre de la sesión |
+
+Las respuestas abortadas por el usuario se consideran cancelaciones silenciosas.
+No generan `error`, `complete`, sonido, popup ni toast.
+
+## Los cuatro canales
+
+Cada evento tiene cuatro interruptores independientes:
 
 ```json
 {
@@ -68,30 +129,70 @@ Cada evento admite estos interruptores:
 }
 ```
 
-- `system`: toast nativo mediante el fork mantenido `toasted-notifier`. En
-  Windows permanece hasta volver a la terminal; en macOS/Linux es transitorio.
-- `popup`: aviso persistente que no roba el foco; al hacer clic restaura la
-  terminal y se cierra.
-- `sound`: sonido nativo o archivo configurado para el evento.
-- `titleFlash`: alterna temporalmente el título de la terminal.
+| Canal | Descripción |
+| --- | --- |
+| `system` | Notificación nativa del sistema operativo |
+| `sound` | Sonido predeterminado o archivo configurado para el evento |
+| `popup` | Ventana persistente y personalizable |
+| `titleFlash` | Alterna temporalmente el título de la terminal |
 
-### Mensajes
+El toast del sistema es silencioso a propósito. El canal `sound` controla todo el
+audio y evita que se reproduzcan dos sonidos al mismo tiempo.
 
-Los mensajes admiten `{session}` y `{details}`:
+## Personalización
+
+### Archivo de configuración
+
+Crea un archivo JSON en la ruta correspondiente:
+
+| Sistema | Ruta predeterminada |
+| --- | --- |
+| Windows | `%USERPROFILE%\.config\opencode\notify.json` |
+| Linux | `~/.config/opencode/notify.json` |
+| macOS | `~/.config/opencode/notify.json` |
+
+Todos los campos son opcionales. El plugin combina lo que declares con sus
+valores predeterminados.
+
+> [!IMPORTANT]
+> `notify.json` usa JSON estricto: no admite comentarios ni comas finales. Si el
+> archivo no existe o contiene JSON inválido, se utilizará la configuración
+> predeterminada.
+
+Esta es una configuración inicial completa, igual a la incluida en
+`notify.example.json`:
 
 ```json
 {
+  "events": {
+    "complete": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "error": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "permission": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "question": { "system": true, "sound": true, "popup": true, "titleFlash": false }
+  },
   "messages": {
-    "complete": { "title": "OpenCode", "message": "Terminó: {session}" },
-    "error": { "title": "OpenCode", "message": "Error: {details}" }
-  }
-}
-```
-
-### Popup
-
-```json
-{
+    "complete": { "title": "✅ opencode", "message": "Tarea completada: {session}" },
+    "error": { "title": "❌ opencode", "message": "Error: {details}" },
+    "permission": { "title": "🔔 opencode", "message": "Permiso requerido: {details}" },
+    "question": { "title": "🔔 opencode", "message": "Se necesita tu respuesta: {session}" }
+  },
+  "sounds": {},
+  "cooldownMs": 1200,
+  "onlyMainSessions": true,
+  "quietHours": {
+    "enabled": false,
+    "start": "22:00",
+    "end": "08:00"
+  },
+  "toast": {
+    "appID": "com.opencode.notify",
+    "appName": "OpenCode"
+  },
+  "titleFlash": {
+    "text": "⚠ opencode necesita atención",
+    "intervalMs": 600,
+    "durationMs": 8000
+  },
   "popup": {
     "blinkColors": ["#FFC800", "#FF5050"],
     "blinkIntervalMs": 600,
@@ -109,62 +210,272 @@ Los mensajes admiten `{session}` y `{details}`:
 }
 ```
 
-Los campos globales son el fallback. Cada entrada de `events` reemplaza solo los
-campos declarados. Un color produce fondo estático; dos o más producen parpadeo.
+Reinicia OpenCode después de modificar este archivo. La configuración se carga
+una vez durante la ejecución.
 
-En Windows el popup usa un formulario WinForms no activable. En Linux intenta
-Tkinter para conservar colores, fuente, opacidad y parpadeo; si no está
-disponible cae a Zenity y luego a `notify-send`. En macOS usa `osascript`.
+### Otra ubicación
 
-Dependencias recomendadas en Linux:
+Puedes pasar una ruta absoluta como opción del plugin:
+
+```jsonc
+{
+  "plugin": [
+    [
+      "opencode-desktop-notify",
+      { "configPath": "C:/Users/Ana/Documents/opencode-notify.json" }
+    ]
+  ]
+}
+```
+
+En Windows usa `/` o escapa cada barra inversa como `\\`. También puedes definir
+la variable de entorno `OPENCODE_NOTIFY_CONFIG`:
+
+```powershell
+$env:OPENCODE_NOTIFY_CONFIG = "C:\Users\Ana\Documents\opencode-notify.json"
+opencode
+```
 
 ```sh
-# Debian/Ubuntu
-sudo apt install python3-tk libcanberra-gtk3-module
+OPENCODE_NOTIFY_CONFIG="$HOME/opencode-notify.json" opencode
+```
+
+El orden de prioridad es:
+
+1. `configPath` en la entrada del plugin.
+2. `OPENCODE_NOTIFY_CONFIG`.
+3. `~/.config/opencode/notify.json`.
+
+## Recetas listas para usar
+
+### Solo notificaciones del sistema
+
+```json
+{
+  "events": {
+    "complete": { "system": true, "sound": false, "popup": false, "titleFlash": false },
+    "error": { "system": true, "sound": false, "popup": false, "titleFlash": false },
+    "permission": { "system": true, "sound": false, "popup": false, "titleFlash": false },
+    "question": { "system": true, "sound": false, "popup": false, "titleFlash": false }
+  }
+}
+```
+
+### Avisar solo cuando se necesita atención
+
+Desactiva por completo `complete`. Los demás eventos conservarán sus valores
+predeterminados:
+
+```json
+{
+  "events": {
+    "complete": { "system": false, "sound": false, "popup": false, "titleFlash": false }
+  }
+}
+```
+
+### Colores estáticos, sin parpadeo
+
+Un solo color produce un fondo estático. Dos o más colores se alternan:
+
+```json
+{
+  "popup": {
+    "events": {
+      "complete": { "blinkColors": ["#15803D"] },
+      "error": { "blinkColors": ["#B91C1C"] },
+      "permission": { "blinkColors": ["#D97706"] },
+      "question": { "blinkColors": ["#4F46E5"] }
+    }
+  }
+}
+```
+
+### Sonidos propios
+
+```json
+{
+  "sounds": {
+    "complete": "C:\\Windows\\Media\\notify.wav",
+    "error": "C:\\Windows\\Media\\Windows Critical Stop.wav"
+  }
+}
+```
+
+En Linux o macOS usa rutas normales, por ejemplo
+`/home/ana/.local/share/sounds/complete.wav`. El formato WAV es la opción más
+portable entre sistemas.
+
+### Horario silencioso
+
+```json
+{
+  "quietHours": {
+    "enabled": true,
+    "start": "22:30",
+    "end": "08:00"
+  }
+}
+```
+
+El horario usa la hora local del equipo y puede cruzar la medianoche. Durante ese
+periodo no se activa ningún canal.
+
+### Título intermitente solo para permisos
+
+```json
+{
+  "events": {
+    "permission": { "titleFlash": true }
+  },
+  "titleFlash": {
+    "text": "OpenCode necesita un permiso",
+    "intervalMs": 500,
+    "durationMs": 10000
+  }
+}
+```
+
+## Referencia de configuración
+
+### Opciones generales
+
+| Campo | Tipo | Predeterminado | Uso |
+| --- | --- | --- | --- |
+| `events` | objeto | Todos activos salvo `titleFlash` | Canales habilitados por evento |
+| `messages` | objeto | Mensajes en español | Título, texto e icono opcional por evento |
+| `sounds` | objeto | `{}` | Ruta de audio por evento |
+| `cooldownMs` | número | `1200` | Espera mínima entre avisos del mismo tipo |
+| `onlyMainSessions` | booleano | `true` | Omite sesiones de subagentes |
+| `quietHours.enabled` | booleano | `false` | Activa el horario silencioso |
+| `quietHours.start` | `HH:MM` | `22:00` | Inicio del horario silencioso |
+| `quietHours.end` | `HH:MM` | `08:00` | Fin del horario silencioso |
+| `toast.appID` | texto | `com.opencode.notify` | Identidad del toast, principalmente en Windows |
+| `toast.appName` | texto | `OpenCode` | Nombre visible de la aplicación |
+
+### Mensajes y variables
+
+Cada entrada de `messages` acepta `title`, `message` e `icon`. El icono es una
+ruta opcional utilizada por la notificación del sistema.
+
+| Variable | Resultado |
+| --- | --- |
+| `{session}` | Título de la sesión o su identificador |
+| `{details}` | Error o permiso solicitado; queda vacío si no aplica |
+
+```json
+{
+  "messages": {
+    "complete": {
+      "title": "OpenCode listo",
+      "message": "Terminó {session}",
+      "icon": "C:\\Users\\Ana\\Pictures\\opencode.png"
+    }
+  }
+}
+```
+
+### Estilo del popup
+
+| Campo | Tipo | Descripción |
+| --- | --- | --- |
+| `blinkColors` | `string[]` | Colores hexadecimales del fondo; usa al menos uno |
+| `blinkIntervalMs` | número | Tiempo entre colores; el mínimo efectivo es 100 ms |
+| `fontFamily` | texto | Fuente instalada en el sistema |
+| `fontSize` | número | Tamaño del texto |
+| `textColor` | texto | Color hexadecimal del texto |
+| `opacity` | número | Opacidad entre `0.2` y `1` |
+| `events` | objeto | Reemplazos parciales para cada tipo de evento |
+
+Los campos globales funcionan como base. `popup.events.<evento>` reemplaza solo
+los campos que declara, por lo que puedes cambiar el color de un evento sin
+repetir fuente, tamaño u opacidad.
+
+> [!NOTE]
+> El sistema operativo controla la apariencia del toast nativo. Sus colores no
+> pueden cambiarse desde el plugin; la personalización visual completa se aplica
+> al popup.
+
+## Compatibilidad
+
+| Función | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| Toast del sistema | Persistente y cerrable por ID | Transitorio mediante `notify-send` | Notification Center |
+| Popup | WinForms, estilizado y sin robar foco | Tkinter, con fallbacks | Alerta de AppleScript |
+| Sonido predeterminado | PowerShell | Backend disponible | `afplay` |
+| Sonido personalizado | WAV con `Media.SoundPlayer` | Varios reproductores | Formatos compatibles con `afplay` |
+| Restaurar terminal desde el aviso | Sí | No garantizado | Terminal.app |
+
+En Windows, el toast persistente se cierra cuando vuelves a la terminal o cuando
+haces clic en el popup asociado. El popup también restaura y enfoca una terminal
+minimizada.
+
+### Dependencias recomendadas en Linux
+
+El plugin intenta Tkinter, luego Zenity y finalmente `notify-send`. Para sonido
+detecta `canberra-gtk-play`, `paplay`, `pw-play`, `aplay`, `ffplay` o `beep`.
+
+```sh
+# Debian / Ubuntu
+sudo apt install python3-tk libcanberra-gtk3-module libnotify-bin zenity
 
 # Fedora
-sudo dnf install python3-tkinter libcanberra-gtk3
+sudo dnf install python3-tkinter libcanberra-gtk3 libnotify zenity
 
-# Arch
-sudo pacman -S tk libcanberra
+# Arch Linux
+sudo pacman -S tk libcanberra libnotify zenity
 ```
 
-Los colores del toast del sistema dependen del tema del sistema operativo y no
-son controlables por el plugin. La personalización visual completa pertenece al
-popup.
+No es obligatorio instalar todos los paquetes. Basta con un backend gráfico y
+uno de audio disponibles en tu entorno.
 
-### Otras opciones
+## Solución de problemas
 
-- `cooldownMs`: tiempo mínimo entre notificaciones del mismo tipo.
-- `onlyMainSessions`: omite subagentes cuando vale `true`.
-- `quietHours`: horario silencioso con formato `HH:MM`.
-- `sounds`: ruta de audio por evento.
-- `toast`: identidad `appID` y `appName` del toast.
-- `titleFlash`: texto, intervalo y duración del parpadeo.
+### No aparece ninguna notificación
 
-## Arquitectura
+- Confirma que `opencode-desktop-notify` está dentro de `plugin`.
+- Reinicia completamente OpenCode después de cambiar la configuración.
+- Verifica que el sistema operativo permita notificaciones.
+- Comprueba que estás usando una sesión principal o cambia `onlyMainSessions` a `false`.
+- Revisa que los cuatro canales del evento no estén en `false`.
 
-```text
-src/
-├── application/
-│   ├── dto/
-│   ├── mapper/
-│   ├── usecase/
-│   └── validation/
-├── domain/
-│   ├── entity/
-│   ├── enum/
-│   └── port/{in,out}/
-├── infrastructure/
-│   ├── config/
-│   ├── controller/
-│   ├── adapter/entity/
-│   ├── adapter/mapper/
-│   └── plugin.ts
-└── helpers/
-    ├── linux/
-    └── win32/
+### Mis cambios en `notify.json` no se aplican
+
+- Valida que sea JSON estricto, sin comentarios ni comas finales.
+- Confirma la ruta efectiva según el orden de prioridad documentado arriba.
+- Reinicia OpenCode; el archivo se mantiene en caché durante la ejecución.
+
+### Recibo avisos duplicados
+
+No cargues al mismo tiempo la versión npm y una copia local del plugin. OpenCode
+considera que son plugins diferentes y ejecutará ambos.
+
+```jsonc
+{
+  "plugin": [
+    "opencode-desktop-notify"
+    // No añadas también file:///.../plugin.ts
+  ]
+}
 ```
+
+### El popup de Linux no conserva los colores
+
+Instala Tkinter. Sin él, Zenity y `notify-send` funcionan como respaldo, pero no
+pueden reproducir toda la personalización visual.
+
+### No se escucha el sonido
+
+- Comprueba que `sound` sea `true` para ese evento.
+- En Windows, utiliza preferiblemente un archivo WAV.
+- En Linux, instala al menos uno de los backends mencionados en Compatibilidad.
+- Verifica que la ruta configurada exista y sea accesible.
+
+## Privacidad
+
+El plugin procesa los eventos y reproduce los avisos localmente. No crea cuentas,
+no añade telemetría y no envía el contenido de las notificaciones a servicios de
+terceros.
 
 ## Desarrollo local
 
@@ -174,15 +485,19 @@ npm test
 npm run build
 ```
 
-Para cargar el código fuente localmente:
+Para cargar el código fuente directamente:
 
 ```jsonc
 {
-  "plugin": ["file:///C:/ruta/al/proyecto/src/infrastructure/plugin.ts"]
+  "plugin": [
+    "file:///C:/ruta/al/proyecto/src/infrastructure/plugin.ts"
+  ]
 }
 ```
 
-## Publicación
+No declares simultáneamente la ruta local y el paquete npm. Consulta
+[`CHANGELOG.md`](./CHANGELOG.md) para conocer los cambios por versión.
 
-Consultar [`PUBLISHING.md`](./PUBLISHING.md). `npm pack --dry-run` muestra
-exactamente los archivos que recibirán los usuarios.
+## Licencia
+
+[MIT](./LICENSE)
