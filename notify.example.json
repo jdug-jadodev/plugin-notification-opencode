@@ -1,0 +1,44 @@
+{
+  "events": {
+    "permission": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "complete": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "error": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "question": { "system": true, "sound": true, "popup": true, "titleFlash": false }
+  },
+  "messages": {
+    "complete": { "title": "✅ opencode", "message": "Tarea completada: {session}" },
+    "error": { "title": "❌ opencode", "message": "Error: {details}" },
+    "permission": { "title": "🔔 opencode", "message": "Permiso requerido: {details}" },
+    "question": { "title": "🔔 opencode", "message": "Se necesita tu respuesta: {session}" }
+  },
+  "sounds": {
+    "complete": null,
+    "error": null,
+    "permission": null,
+    "question": null
+  },
+  "cooldownMs": 1200,
+  "onlyMainSessions": true,
+  "quietHours": {
+    "enabled": false,
+    "start": "22:00",
+    "end": "08:00"
+  },
+  "toast": {
+    "appID": "com.opencode.notify",
+    "appName": "OpenCode"
+  },
+  "titleFlash": {
+    "text": "⚠ opencode necesita atención",
+    "intervalMs": 600,
+    "durationMs": 8000
+  },
+  "popup": {
+    "blinkColors": ["#FFC800", "#FF5050"],
+    "blinkIntervalMs": 600,
+    "fontFamily": "Segoe UI",
+    "fontSize": 12,
+    "textColor": "#111111",
+    "opacity": 1
+  }
+}
