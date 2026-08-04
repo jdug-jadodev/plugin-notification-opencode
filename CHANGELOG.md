@@ -10,6 +10,8 @@
 - Keep operating-system notifications silent so the `sound` channel owns audio.
 - Prevent Windows notification helpers from minimizing the terminal.
 - Suppress the duplicate completion notification emitted after a session error or abort.
+- Treat aborted responses as silent cancellations.
+- Close the Windows toast when its matching popup is clicked.
 
 ## 0.1.0
 

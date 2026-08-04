@@ -8,11 +8,13 @@ import { FIND_TERMINAL_PS, FOCUSER_CS, FOCUS_TERMINAL_PS, NOACTIVATE_FORM_CS } f
 import { DEFAULT_POPUP_CONFIG } from "../config/defaultNotifyConfig.js";
 
 export class NativePersistentPopup implements PersistentPopup {
+  private static readonly ACTIVATED_EXIT_CODE = 10;
   private active: ChildProcess | undefined;
 
   constructor(
     private readonly config?: NotifierConfig,
     private readonly platform: NodeJS.Platform = process.platform,
+    private readonly onActivate?: () => void,
   ) {}
 
   async show(message: NotificationMessage): Promise<void> {
@@ -29,7 +31,7 @@ export class NativePersistentPopup implements PersistentPopup {
     this.active = child;
     child.unref();
     child.once("error", () => this.clear(child));
-    child.once("exit", () => this.clear(child));
+    child.once("exit", (code) => this.onExit(child, code));
   }
 
   private dismiss(): void {
@@ -42,8 +44,15 @@ export class NativePersistentPopup implements PersistentPopup {
     this.active = undefined;
   }
 
-  private clear(child: ChildProcess): void {
-    if (this.active === child) this.active = undefined;
+  private clear(child: ChildProcess): boolean {
+    if (this.active !== child) return false;
+    this.active = undefined;
+    return true;
+  }
+
+  private onExit(child: ChildProcess, code: number | null): void {
+    if (!this.clear(child)) return;
+    if (code === NativePersistentPopup.ACTIVATED_EXIT_CODE) this.onActivate?.();
   }
 
   private async env(message: NotificationMessage): Promise<NodeJS.ProcessEnv> {
@@ -126,6 +135,7 @@ export class NativePersistentPopup implements PersistentPopup {
       "$label.Padding = New-Object System.Windows.Forms.Padding(20)",
       "$label.AutoSize = $true",
       "$form.Controls.Add($label)",
+      "$script:activated = $false",
       '$colors = @($style.blinkColors | ForEach-Object { [System.Drawing.ColorTranslator]::FromHtml($_) })',
       "if ($colors.Count -ge 2) {",
       "  $timer = New-Object System.Windows.Forms.Timer",
@@ -140,8 +150,8 @@ export class NativePersistentPopup implements PersistentPopup {
       "} else {",
       "  $form.BackColor = $colors[0]",
       "}",
-      "$form.Add_Click({ Add-Content -Path $diag -Value \"click fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; Add-Content -Path $diag -Value \"after-focus fg=$([Focuser]::GetForegroundWindow())\"; $form.Close() })",
-      "$label.Add_Click({ Add-Content -Path $diag -Value \"click-label fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; $form.Close() })",
+      "$form.Add_Click({ $script:activated = $true; Add-Content -Path $diag -Value \"click fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; Add-Content -Path $diag -Value \"after-focus fg=$([Focuser]::GetForegroundWindow())\"; $form.Close() })",
+      "$label.Add_Click({ $script:activated = $true; Add-Content -Path $diag -Value \"click-label fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; $form.Close() })",
       "if ($script:target -ne [IntPtr]::Zero) {",
       "  $focusTimer = New-Object System.Windows.Forms.Timer",
       "  $focusTimer.Interval = 150",
@@ -159,7 +169,8 @@ export class NativePersistentPopup implements PersistentPopup {
       "  $focusTimer.Start()",
        "}",
        "[System.Windows.Forms.Application]::Run($form)",
-"} catch {",
+       `if ($script:activated) { exit ${NativePersistentPopup.ACTIVATED_EXIT_CODE} }`,
+       "} catch {",
       "  Add-Content -Path $diag -Value (\"ERROR: \" + $_.Exception.Message + \" | line=\" + $_.InvocationInfo.ScriptLineNumber)",
       "}",
     ].join("\n");

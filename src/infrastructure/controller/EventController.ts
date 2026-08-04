@@ -5,19 +5,38 @@ import type { NotificationHandler } from "../../domain/port/in/NotificationHandl
 import { OpenCodeEventMapper } from "../adapter/mapper/OpenCodeEventMapper.js";
 
 export class EventController {
-  private readonly failedSessions = new Set<string>();
+  private readonly incompleteSessions = new Set<string>();
+  private incompleteSessionWithoutId = false;
+  private activeSessionId: string | undefined;
 
   constructor(private readonly handler: NotificationHandler) {}
 
   async onSdkEvent(event: Event): Promise<void> {
     if (event.type === "session.status" && event.properties.status.type === "busy") {
-      this.failedSessions.delete(event.properties.sessionID);
-      return;
+      this.activeSessionId = event.properties.sessionID;
     }
-    if (event.type === "session.error" && event.properties.sessionID) {
-      this.failedSessions.add(event.properties.sessionID);
+    if (event.type === "message.updated") {
+      this.activeSessionId = event.properties.sessionID;
+      const message = event.properties.info;
+      if (message.role === "assistant" && message.summary !== true) {
+        if (message.error) {
+          this.incompleteSessions.add(event.properties.sessionID);
+          this.incompleteSessionWithoutId = false;
+        } else if (message.time.completed !== undefined) {
+          this.incompleteSessions.delete(event.properties.sessionID);
+          this.incompleteSessionWithoutId = false;
+        }
+      }
     }
-    if (event.type === "session.idle" && this.failedSessions.delete(event.properties.sessionID)) return;
+    if (event.type === "session.error") {
+      const sessionId = event.properties.sessionID ?? this.activeSessionId;
+      if (sessionId) this.incompleteSessions.add(sessionId);
+      else this.incompleteSessionWithoutId = true;
+    }
+    if (event.type === "session.error" && event.properties.error?.name === "MessageAbortedError") return;
+    if (event.type === "session.idle") {
+      if (this.incompleteSessions.has(event.properties.sessionID) || this.incompleteSessionWithoutId) return;
+    }
 
     const dto = OpenCodeEventMapper.toDto(event);
     if (dto) await this.handler.handle(NotificationEventMapper.toDomain(dto));

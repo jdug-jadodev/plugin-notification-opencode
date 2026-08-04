@@ -184,7 +184,7 @@ console.log("-- session.error seguido de session.idle --");
 await controller.onSdkEvent({ id: "evt-3-idle", type: "session.idle", properties: { sessionID: "main" } } satisfies Event);
 check(popup.shown.length === 3, "idle posterior al error no duplica la notificación");
 
-console.log("-- una nueva ejecución permite complete --");
+console.log("-- MessageAbortedError es silencioso --");
 const lifecycleEvents: EventType[] = [];
 const lifecycleController = new EventController({
   async handle(event) {
@@ -192,9 +192,34 @@ const lifecycleController = new EventController({
   },
 });
 await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-busy-aborted",
+  type: "session.status",
+  properties: { sessionID: "main", status: { type: "busy" } },
+} satisfies Event);
+await lifecycleController.onSdkEvent({
   id: "evt-lifecycle-error",
   type: "session.error",
-  properties: { sessionID: "main", error: { name: "MessageAbortedError", data: { message: "Aborted" } } },
+  properties: { error: { name: "MessageAbortedError", data: { message: "Aborted" } } },
+} satisfies Event);
+const abortedAssistant = {
+  id: "msg-aborted",
+  sessionID: "main",
+  role: "assistant",
+  time: { created: 1, completed: 2 },
+  error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+  parentID: "msg-user",
+  modelID: "test-model",
+  providerID: "test-provider",
+  mode: "build",
+  agent: "build",
+  path: { cwd: verifyDir, root: verifyDir },
+  cost: 0,
+  tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+} as const;
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-message-aborted",
+  type: "message.updated",
+  properties: { sessionID: "main", info: abortedAssistant },
 } satisfies Event);
 await lifecycleController.onSdkEvent({
   id: "evt-lifecycle-idle",
@@ -202,9 +227,31 @@ await lifecycleController.onSdkEvent({
   properties: { sessionID: "main" },
 } satisfies Event);
 await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-idle-duplicate",
+  type: "session.idle",
+  properties: { sessionID: "main" },
+} satisfies Event);
+check(lifecycleEvents.length === 0, "aborto sin sessionID y sus idle duplicados no notifican");
+
+console.log("-- una nueva ejecución permite complete --");
+await lifecycleController.onSdkEvent({
   id: "evt-lifecycle-busy",
   type: "session.status",
   properties: { sessionID: "main", status: { type: "busy" } },
+} satisfies Event);
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-idle-late",
+  type: "session.idle",
+  properties: { sessionID: "main" },
+} satisfies Event);
+check(lifecycleEvents.length === 0, "idle tardío durante la ejecución nueva sigue bloqueado");
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-message-complete",
+  type: "message.updated",
+  properties: {
+    sessionID: "main",
+    info: { ...abortedAssistant, id: "msg-complete", time: { created: 3, completed: 4 }, error: undefined },
+  },
 } satisfies Event);
 await lifecycleController.onSdkEvent({
   id: "evt-lifecycle-complete",
@@ -212,7 +259,7 @@ await lifecycleController.onSdkEvent({
   properties: { sessionID: "main" },
 } satisfies Event);
 check(
-  lifecycleEvents.length === 2 && lifecycleEvents[0] === EventType.Error && lifecycleEvents[1] === EventType.Complete,
+  lifecycleEvents.length === 1 && lifecycleEvents[0] === EventType.Complete,
   "una ejecución nueva sí notifica complete",
 );
 
@@ -304,8 +351,13 @@ console.log("-- protecciones Win32 --");
 check(NOACTIVATE_FORM_CS.includes("0x08000000"), "popup usa WS_EX_NOACTIVATE desde su creación");
 check(FOCUS_TERMINAL_PS.includes("IsIconic"), "foco detecta terminal minimizada");
 check(FOCUS_TERMINAL_PS.includes("ShowWindow($script:target, 9)"), "foco restaura con SW_RESTORE");
-const windowsPopup = new NativePersistentPopup(undefined, "win32") as unknown as {
+let popupActivations = 0;
+const windowsPopup = new NativePersistentPopup(undefined, "win32", () => {
+  popupActivations += 1;
+}) as unknown as {
+  active: object | undefined;
   command(message: NotificationMessage): string[];
+  onExit(child: object, code: number): void;
   windowsScript(): string;
 };
 const popupScript = windowsPopup.windowsScript();
@@ -313,6 +365,11 @@ check(
   popupScript.includes("Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing"),
   "popup referencia WinForms al compilar NoActivateForm",
 );
+check(popupScript.includes("$script:activated = $true") && popupScript.includes("exit 10"), "popup señala el clic");
+const fakePopupChild = {};
+windowsPopup.active = fakePopupChild;
+windowsPopup.onExit(fakePopupChild, 10);
+check(popupActivations === 1, "clic del popup activa el cierre del toast");
 const popupCommand = windowsPopup.command(message);
 const focusCommand = (new NativeTerminalFocuser("win32") as unknown as { command(): string[] }).command();
 const watcherCommand = (new NativeTerminalFocusWatcher("win32") as unknown as { command(): string[] }).command();
