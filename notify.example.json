@@ -1,9 +1,9 @@
 {
   "events": {
-    "permission": { "system": true, "sound": true, "popup": true, "titleFlash": false },
-    "complete": { "system": true, "sound": true, "popup": true, "titleFlash": false },
-    "error": { "system": true, "sound": true, "popup": true, "titleFlash": false },
-    "question": { "system": true, "sound": true, "popup": true, "titleFlash": false }
+    "permission": { "system": true, "sound": false, "popup": true, "titleFlash": false },
+    "complete": { "system": true, "sound": false, "popup": true, "titleFlash": false },
+    "error": { "system": true, "sound": false, "popup": true, "titleFlash": false },
+    "question": { "system": true, "sound": false, "popup": true, "titleFlash": false }
   },
   "messages": {
     "complete": { "title": "✅ opencode", "message": "Tarea completada: {session}" },
@@ -11,12 +11,7 @@
     "permission": { "title": "🔔 opencode", "message": "Permiso requerido: {details}" },
     "question": { "title": "🔔 opencode", "message": "Se necesita tu respuesta: {session}" }
   },
-  "sounds": {
-    "complete": null,
-    "error": null,
-    "permission": null,
-    "question": null
-  },
+  "sounds": {},
   "cooldownMs": 1200,
   "onlyMainSessions": true,
   "quietHours": {

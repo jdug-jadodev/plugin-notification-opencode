@@ -1,32 +1,51 @@
 {
-  "name": "opencode-notify",
+  "name": "opencode-desktop-notify",
   "version": "0.1.0",
-  "description": "Sistema de notificaciones para OpenCode: toast del sistema, sonido, flash de título y bell.",
+  "description": "Desktop notifications, persistent popups, and terminal focus for OpenCode.",
   "type": "module",
-  "main": "src/infrastructure/plugin.ts",
+  "main": "./dist/infrastructure/plugin.js",
+  "types": "./dist/infrastructure/plugin.d.ts",
   "exports": {
-    ".": "./src/infrastructure/plugin.ts"
+    ".": {
+      "types": "./dist/infrastructure/plugin.d.ts",
+      "import": "./dist/infrastructure/plugin.js",
+      "default": "./dist/infrastructure/plugin.js"
+    }
   },
   "files": [
-    "src",
+    "dist",
     "notify.example.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "clean:verify": "node -e \"require('node:fs').rmSync('.verify-dist',{recursive:true,force:true})\"",
+    "prebuild": "npm run clean",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "verify": "tsc -p tsconfig.verify.json && node .verify-dist/test/verify.js"
+    "preverify": "npm run clean:verify",
+    "verify": "tsc -p tsconfig.verify.json && node .verify-dist/test/verify.js",
+    "test": "npm run typecheck && npm run verify",
+    "prepack": "npm run build"
   },
   "keywords": [
     "opencode",
     "plugin",
     "notify",
-    "notification"
+    "notification",
+    "desktop",
+    "popup",
+    "windows"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.11",
     "@opencode-ai/sdk": "^1.18.11",
-    "node-notifier": "^10.0.1"
+    "node-notifier": "npm:toasted-notifier@^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

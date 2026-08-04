@@ -13,7 +13,7 @@ import { EventController } from "./controller/EventController.js";
 
 export type { OpenCodeNotifyOptions } from "./config/OpenCodeNotifyOptions.js";
 
-export const opencodeNotify: Plugin = async ({ client }, options) => {
+const opencodeNotify: Plugin = async ({ client }, options) => {
   const settings = (options ?? {}) as OpenCodeNotifyOptions;
   const config = new JsonConfigLoader(settings.configPath);
   const sessions = new OpencodeSessionStore(client);
@@ -44,3 +44,5 @@ export const opencodeNotify: Plugin = async ({ client }, options) => {
     },
   };
 };
+
+export default opencodeNotify;
