@@ -22,8 +22,8 @@ Agregar el paquete al archivo global `~/.config/opencode/opencode.json` o al
 OpenCode instala automáticamente los plugins declarados como paquetes npm.
 Reiniciar OpenCode después de modificar su configuración.
 
-Sin configuración adicional se activan `system` y `popup` para todos los
-eventos; `sound` y `titleFlash` quedan desactivados.
+Sin configuración adicional se activan `system`, `sound` y `popup` para todos
+los eventos; `titleFlash` queda desactivado.
 
 ## Eventos
 
@@ -62,13 +62,14 @@ Cada evento admite estos interruptores:
 ```json
 {
   "system": true,
-  "sound": false,
+  "sound": true,
   "popup": true,
   "titleFlash": false
 }
 ```
 
-- `system`: toast nativo mediante el fork mantenido `toasted-notifier`.
+- `system`: toast nativo mediante el fork mantenido `toasted-notifier`. En
+  Windows permanece hasta volver a la terminal; en macOS/Linux es transitorio.
 - `popup`: aviso persistente que no roba el foco; al hacer clic restaura la
   terminal y se cierra.
 - `sound`: sonido nativo o archivo configurado para el evento.
@@ -97,13 +98,40 @@ Los mensajes admiten `{session}` y `{details}`:
     "fontFamily": "Segoe UI",
     "fontSize": 12,
     "textColor": "#111111",
-    "opacity": 1
+    "opacity": 1,
+    "events": {
+      "complete": { "blinkColors": ["#14532D", "#22C55E"], "textColor": "#FFFFFF" },
+      "error": { "blinkColors": ["#7F1D1D", "#EF4444"], "textColor": "#FFFFFF" },
+      "permission": { "blinkColors": ["#78350F", "#F59E0B"], "textColor": "#111827" },
+      "question": { "blinkColors": ["#312E81", "#6366F1"], "textColor": "#FFFFFF" }
+    }
   }
 }
 ```
 
-En Windows el popup usa un formulario WinForms no activable y siempre visible.
-En macOS usa `osascript`; en Linux usa `notify-send`.
+Los campos globales son el fallback. Cada entrada de `events` reemplaza solo los
+campos declarados. Un color produce fondo estático; dos o más producen parpadeo.
+
+En Windows el popup usa un formulario WinForms no activable. En Linux intenta
+Tkinter para conservar colores, fuente, opacidad y parpadeo; si no está
+disponible cae a Zenity y luego a `notify-send`. En macOS usa `osascript`.
+
+Dependencias recomendadas en Linux:
+
+```sh
+# Debian/Ubuntu
+sudo apt install python3-tk libcanberra-gtk3-module
+
+# Fedora
+sudo dnf install python3-tkinter libcanberra-gtk3
+
+# Arch
+sudo pacman -S tk libcanberra
+```
+
+Los colores del toast del sistema dependen del tema del sistema operativo y no
+son controlables por el plugin. La personalización visual completa pertenece al
+popup.
 
 ### Otras opciones
 
@@ -134,6 +162,7 @@ src/
 │   ├── adapter/mapper/
 │   └── plugin.ts
 └── helpers/
+    ├── linux/
     └── win32/
 ```
 

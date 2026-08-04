@@ -21,6 +21,6 @@ export class BunLogger implements Logger {
   }
 
   private log(level: "debug" | "info" | "warn" | "error", message: string): void {
-    this.client.app.log({ body: { service: "opencode-notify", level, message } }).catch(() => {});
+    this.client.app.log({ body: { service: "opencode-desktop-notify", level, message } }).catch(() => {});
   }
 }

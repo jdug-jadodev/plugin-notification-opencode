@@ -9,6 +9,12 @@ export const DEFAULT_POPUP_CONFIG: PopupConfig = {
   fontSize: 12,
   textColor: "#111111",
   opacity: 1,
+  events: {
+    [EventType.Complete]: { blinkColors: ["#14532D", "#22C55E"], textColor: "#FFFFFF" },
+    [EventType.Error]: { blinkColors: ["#7F1D1D", "#EF4444"], textColor: "#FFFFFF" },
+    [EventType.Permission]: { blinkColors: ["#78350F", "#F59E0B"], textColor: "#111827" },
+    [EventType.Question]: { blinkColors: ["#312E81", "#6366F1"], textColor: "#FFFFFF" },
+  },
 };
 
 export const DEFAULT_NOTIFY_CONFIG: NotifyConfig = {
@@ -20,10 +26,10 @@ export const DEFAULT_NOTIFY_CONFIG: NotifyConfig = {
   popup: DEFAULT_POPUP_CONFIG,
   sounds: {},
   events: {
-    [EventType.Complete]: { system: true, sound: false, popup: true, titleFlash: false },
-    [EventType.Error]: { system: true, sound: false, popup: true, titleFlash: false },
-    [EventType.Permission]: { system: true, sound: false, popup: true, titleFlash: false },
-    [EventType.Question]: { system: true, sound: false, popup: true, titleFlash: false },
+    [EventType.Complete]: { system: true, sound: true, popup: true, titleFlash: false },
+    [EventType.Error]: { system: true, sound: true, popup: true, titleFlash: false },
+    [EventType.Permission]: { system: true, sound: true, popup: true, titleFlash: false },
+    [EventType.Question]: { system: true, sound: true, popup: true, titleFlash: false },
   },
   messages: {
     [EventType.Complete]: { title: "✅ opencode", message: "Tarea completada: {session}" },

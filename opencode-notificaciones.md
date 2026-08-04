@@ -63,7 +63,7 @@ bell quedan como opciones configurables.
 ### Despacho por SO (todo son comandos que ya existen en el sistema)
 
 - **Windows** → toast vía `node-notifier` + `[console]::beep(1000, 300)`
-- **Linux** → `node-notifier` (usa `notify-send`) + `paplay` / `canberra-gtk-play`
+- **Linux** → toast nativo + popup Tkinter (fallback Zenity/`notify-send`) + audio con detección de backend
 - **macOS** → `node-notifier` (usa `terminal-notifier` empaquetado) + `afplay /System/Library/Sounds/Glass.aiff`
 - **Flash de título** → `\x1b]2;⚠ opencode necesita atención\x07` + restaurar título
 
@@ -246,7 +246,7 @@ Cada uno implementa su puerto y encapsula la tecnología:
 | Puerto                 | Adaptador                     | Tecnología                            |
 | ---------------------- | ----------------------------- | ------------------------------------- |
 | `NotificationSender`   | `NodeNotifierSender`          | node-notifier (toast OS nativo)       |
-| `SoundPlayer`          | `NativeSoundPlayer`           | Strategy por SO: beep/afplay/paplay   |
+| `SoundPlayer`          | `NativeSoundPlayer`           | Strategy por SO y detección de backend Linux |
 | `TitleFlasher`         | `AnsiTitleFlasher`            | escape sequences `\x1b]2;...`         |
 | `SessionStore`         | `OpencodeSessionStore`        | `session.created` cache + `client.session.get` |
 | `NotifierConfig`       | `JsonConfigLoader`            | `notify.json` + defaults              |
@@ -341,7 +341,7 @@ El plugin recibe `client` con, entre otros:
   `~/.config/opencode/package.json`. Empaqueta sus binarios:
   - Windows → `vendor/snoreToast/snoretoast-x64.exe` / `x86` (sin dependencias
     del sistema).
-  - macOS → `terminal-notifier`; Linux → `notify-send`.
+  - macOS → `terminal-notifier`; Linux → `notify-send` para el toast y Tkinter para el popup.
 - API: `notifier.notify({ title, message, icon, sound, wait, appID, appName, ... })`.
   En Windows las opciones clave son `appID` (agrupación + reemplazo de toast),
   `icon` (ruta o buffer), `wait`/`timeout`.

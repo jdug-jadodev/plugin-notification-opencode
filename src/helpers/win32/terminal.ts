@@ -65,7 +65,7 @@ export const FIND_TERMINAL_PS = [
 
 export const FOCUS_TERMINAL_PS = [
   "function Focus-Terminal {",
-  '  $diag = Join-Path $env:TEMP "opencode-notify-popup.log"',
+  '  $diag = Join-Path $env:TEMP "opencode-desktop-notify-popup.log"',
   "  if ($script:target -eq [IntPtr]::Zero) { Add-Content -Path $diag -Value \"focus-abort target=0\"; return }",
   "  $fg = [Focuser]::GetForegroundWindow()",
   "  $fgPid = 0",
@@ -78,5 +78,19 @@ export const FOCUS_TERMINAL_PS = [
   "  Start-Sleep -Milliseconds 300",
   "  [Focuser]::AttachThreadInput($fgThread, $curThread, $false) | Out-Null",
   '  Add-Content -Path $diag -Value "focus-after fg=$([Focuser]::GetForegroundWindow())"',
+  "}",
+].join("\n");
+
+export const WAIT_FOR_TERMINAL_FOCUS_PS = [
+  "if ($script:target -eq [IntPtr]::Zero) { exit 2 }",
+  "$wasAway = ([Focuser]::GetForegroundWindow() -ne $script:target)",
+  "while ($true) {",
+  "  $foreground = [Focuser]::GetForegroundWindow()",
+  "  if (-not $wasAway) {",
+  "    if ($foreground -ne $script:target) { $wasAway = $true }",
+  "  } elseif ($foreground -eq $script:target) {",
+  "    exit 0",
+  "  }",
+  "  Start-Sleep -Milliseconds 150",
   "}",
 ].join("\n");

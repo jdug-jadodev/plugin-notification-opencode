@@ -4,6 +4,8 @@ export type NodeNotifierOptions = {
   icon?: string;
   appID?: string;
   appName?: string;
+  id?: number;
+  silent?: boolean;
   timeout?: number;
   wait?: boolean;
 };

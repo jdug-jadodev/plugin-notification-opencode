@@ -13,10 +13,17 @@ import type { PersistentPopup } from "../src/domain/port/out/PersistentPopup.js"
 import type { SessionStore } from "../src/domain/port/out/SessionStore.js";
 import type { SoundPlayer } from "../src/domain/port/out/SoundPlayer.js";
 import type { TitleFlasher } from "../src/domain/port/out/TitleFlasher.js";
-import { FOCUS_TERMINAL_PS, NOACTIVATE_FORM_CS } from "../src/helpers/win32/terminal.js";
+import { LINUX_POPUP_PY, LINUX_POPUP_SH } from "../src/helpers/linux/popup.js";
+import { LINUX_DEFAULT_SOUND_SH, LINUX_FILE_SOUND_SH } from "../src/helpers/linux/sound.js";
+import { FOCUS_TERMINAL_PS, NOACTIVATE_FORM_CS, WAIT_FOR_TERMINAL_FOCUS_PS } from "../src/helpers/win32/terminal.js";
 import { JsonConfigLoader } from "../src/infrastructure/adapter/JsonConfigLoader.js";
 import { NativePersistentPopup } from "../src/infrastructure/adapter/NativePersistentPopup.js";
+import { NativeSoundPlayer } from "../src/infrastructure/adapter/NativeSoundPlayer.js";
+import { NativeTerminalFocuser } from "../src/infrastructure/adapter/NativeTerminalFocuser.js";
+import { NativeTerminalFocusWatcher } from "../src/infrastructure/adapter/NativeTerminalFocusWatcher.js";
+import { NodeNotifierMapper } from "../src/infrastructure/adapter/mapper/NodeNotifierMapper.js";
 import { OpenCodeEventMapper } from "../src/infrastructure/adapter/mapper/OpenCodeEventMapper.js";
+import { DEFAULT_NOTIFY_CONFIG } from "../src/infrastructure/config/defaultNotifyConfig.js";
 import { EventController } from "../src/infrastructure/controller/EventController.js";
 
 let failures = 0;
@@ -30,7 +37,7 @@ function check(condition: unknown, label: string): void {
   }
 }
 
-const verifyDir = await mkdtemp(join(tmpdir(), "opencode-notify-verify-"));
+const verifyDir = await mkdtemp(join(tmpdir(), "opencode-desktop-notify-verify-"));
 const mainConfigPath = join(verifyDir, "notify.json");
 const cooldownConfigPath = join(verifyDir, "notify-cooldown.json");
 
@@ -48,6 +55,14 @@ await writeFile(
     },
     messages: {
       permission: { title: "🔔 opencode", message: "Permiso requerido: {details}" },
+    },
+    popup: {
+      blinkColors: ["#101820"],
+      textColor: "#FFFFFF",
+      fontSize: 13,
+      events: {
+        error: { blinkColors: ["#7F1D1D", "#EF4444"] },
+      },
     },
   }),
 );
@@ -147,6 +162,7 @@ await controller.onSdkEvent(permissionAsked);
 check(sender.sent.length === 1, "toast disparado para permission.asked");
 check(popup.shown.length === 1, "popup disparado para permission.asked");
 check(popup.shown[0]?.message.includes("write"), "mensaje incluye el permiso solicitado");
+check(popup.shown[0]?.kind === EventType.Permission, "mensaje conserva el tipo de evento");
 
 console.log("-- session.idle → complete --");
 await controller.onSdkEvent({ id: "evt-2", type: "session.idle", properties: { sessionID: "main" } } satisfies Event);
@@ -163,6 +179,42 @@ await controller.onSdkEvent({
 } satisfies Event);
 check(popup.shown.length === 3, "popup disparado para session.error");
 check(sender.sent[2]?.message.includes("API timeout"), "error llega al mensaje");
+
+console.log("-- session.error seguido de session.idle --");
+await controller.onSdkEvent({ id: "evt-3-idle", type: "session.idle", properties: { sessionID: "main" } } satisfies Event);
+check(popup.shown.length === 3, "idle posterior al error no duplica la notificación");
+
+console.log("-- una nueva ejecución permite complete --");
+const lifecycleEvents: EventType[] = [];
+const lifecycleController = new EventController({
+  async handle(event) {
+    lifecycleEvents.push(event.type);
+  },
+});
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-error",
+  type: "session.error",
+  properties: { sessionID: "main", error: { name: "MessageAbortedError", data: { message: "Aborted" } } },
+} satisfies Event);
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-idle",
+  type: "session.idle",
+  properties: { sessionID: "main" },
+} satisfies Event);
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-busy",
+  type: "session.status",
+  properties: { sessionID: "main", status: { type: "busy" } },
+} satisfies Event);
+await lifecycleController.onSdkEvent({
+  id: "evt-lifecycle-complete",
+  type: "session.idle",
+  properties: { sessionID: "main" },
+} satisfies Event);
+check(
+  lifecycleEvents.length === 2 && lifecycleEvents[0] === EventType.Error && lifecycleEvents[1] === EventType.Complete,
+  "una ejecución nueva sí notifica complete",
+);
 
 console.log("-- evento desconocido se ignora --");
 await controller.onSdkEvent({ id: "evt-4", type: "todo.updated", properties: { sessionID: "main", todos: [] } } satisfies Event);
@@ -207,17 +259,75 @@ await new Promise((resolve) => setTimeout(resolve, 1300));
 await cooldownHandler.handle({ type: EventType.Complete, sessionId: "main" });
 check(cooldownSender.sent.length === 2, "cooldown superado vuelve a notificar");
 
+console.log("-- estilos por evento --");
+const loadedConfig = await new JsonConfigLoader(mainConfigPath).get();
+check(loadedConfig.popup.events.error?.blinkColors?.[1] === "#EF4444", "config carga override de error");
+const popupAdapter = new NativePersistentPopup(new JsonConfigLoader(mainConfigPath), "win32") as unknown as {
+  style(message: NotificationMessage): Promise<{ blinkColors: string[]; textColor: string; fontSize: number }>;
+};
+const resolvedErrorStyle = await popupAdapter.style({ kind: EventType.Error, title: "Error", message: "falló" });
+check(resolvedErrorStyle.blinkColors[0] === "#7F1D1D", "popup aplica colores del evento");
+check(resolvedErrorStyle.textColor === "#FFFFFF" && resolvedErrorStyle.fontSize === 13, "override hereda estilo global");
+const defaults = await new JsonConfigLoader(join(verifyDir, "missing.json")).get();
+check(defaults.events.complete.sound, "sonido viene activo por defecto");
+
+console.log("-- ciclo de vida del toast --");
+const message: NotificationMessage = { kind: EventType.Complete, title: "OpenCode", message: "listo" };
+const windowsToast = NodeNotifierMapper.toInfrastructure(message, DEFAULT_NOTIFY_CONFIG, "win32", 42);
+check(windowsToast.id === 42 && windowsToast.wait === true, "toast Windows es persistente e identificable");
+check(
+  windowsToast.timeout === undefined && windowsToast.silent === true && windowsToast.appName === undefined,
+  "toast Windows conserva appID, espera cierre explícito y es silencioso",
+);
+const linuxToast = NodeNotifierMapper.toInfrastructure(message, DEFAULT_NOTIFY_CONFIG, "linux");
+check(linuxToast.wait === false && linuxToast.timeout === 5, "toast Linux es transitorio");
+check(WAIT_FOR_TERMINAL_FOCUS_PS.includes("$wasAway"), "watcher espera salida y regreso a terminal");
+
+console.log("-- backends Linux --");
+check(LINUX_POPUP_PY.includes("import tkinter") && LINUX_POPUP_PY.includes("blinkColors"), "popup Tkinter usa estilos");
+check(LINUX_POPUP_SH.includes("zenity") && LINUX_POPUP_SH.includes("notify-send"), "popup Linux tiene fallbacks");
+check(
+  LINUX_DEFAULT_SOUND_SH.includes("canberra-gtk-play") &&
+    LINUX_DEFAULT_SOUND_SH.includes("paplay") &&
+    LINUX_DEFAULT_SOUND_SH.includes("pw-play") &&
+    LINUX_DEFAULT_SOUND_SH.includes("aplay"),
+  "sonido Linux detecta backends",
+);
+const linuxPlayer = new NativeSoundPlayer("linux") as unknown as {
+  command(sound: { kind: EventType; path?: string }): string[] | undefined;
+};
+const linuxFileCommand = linuxPlayer.command({ kind: EventType.Error, path: "/tmp/error.wav" });
+check(linuxFileCommand?.[0] === "sh" && linuxFileCommand.at(-1) === "/tmp/error.wav", "archivo Linux no usa afplay");
+check(LINUX_FILE_SOUND_SH.includes("ffplay"), "archivo Linux incluye fallback ffplay");
+
 console.log("-- protecciones Win32 --");
 check(NOACTIVATE_FORM_CS.includes("0x08000000"), "popup usa WS_EX_NOACTIVATE desde su creación");
 check(FOCUS_TERMINAL_PS.includes("IsIconic"), "foco detecta terminal minimizada");
 check(FOCUS_TERMINAL_PS.includes("ShowWindow($script:target, 9)"), "foco restaura con SW_RESTORE");
-const popupScript = (
-  new NativePersistentPopup(undefined, "win32") as unknown as { windowsScript(): string }
-).windowsScript();
+const windowsPopup = new NativePersistentPopup(undefined, "win32") as unknown as {
+  command(message: NotificationMessage): string[];
+  windowsScript(): string;
+};
+const popupScript = windowsPopup.windowsScript();
 check(
   popupScript.includes("Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing"),
   "popup referencia WinForms al compilar NoActivateForm",
 );
+const popupCommand = windowsPopup.command(message);
+const focusCommand = (new NativeTerminalFocuser("win32") as unknown as { command(): string[] }).command();
+const watcherCommand = (new NativeTerminalFocusWatcher("win32") as unknown as { command(): string[] }).command();
+const soundCommand = (new NativeSoundPlayer("win32") as unknown as {
+  command(sound: { kind: EventType }): string[];
+}).command({ kind: EventType.Complete });
+for (const [name, command] of [
+  ["popup", popupCommand],
+  ["focuser", focusCommand],
+  ["watcher", watcherCommand],
+  ["sound", soundCommand],
+] as const) {
+  check(!command.includes("-WindowStyle"), `${name} no modifica el estado de Windows Terminal`);
+  check(command.includes("-NonInteractive"), `${name} usa PowerShell no interactivo`);
+}
 
 if (failures > 0) {
   console.error(`VERIFICACIÓN CON ${failures} FALLO(S)`);

@@ -1,8 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { NotificationMessage } from "../../domain/entity/NotificationMessage.js";
-import type { PopupConfig } from "../../domain/entity/PopupConfig.js";
+import type { PopupStyle } from "../../domain/entity/PopupStyle.js";
 import type { NotifierConfig } from "../../domain/port/out/NotifierConfig.js";
 import type { PersistentPopup } from "../../domain/port/out/PersistentPopup.js";
+import { LINUX_POPUP_PY, LINUX_POPUP_SH } from "../../helpers/linux/popup.js";
 import { FIND_TERMINAL_PS, FOCUSER_CS, FOCUS_TERMINAL_PS, NOACTIVATE_FORM_CS } from "../../helpers/win32/terminal.js";
 import { DEFAULT_POPUP_CONFIG } from "../config/defaultNotifyConfig.js";
 
@@ -19,7 +20,12 @@ export class NativePersistentPopup implements PersistentPopup {
     const command = this.command(message);
     if (!command) return;
     const env = await this.env(message);
-    const child = spawn(command[0], command.slice(1), { stdio: "ignore", detached: this.platform !== "win32", env });
+    const child = spawn(command[0], command.slice(1), {
+      stdio: "ignore",
+      detached: this.platform !== "win32",
+      windowsHide: this.platform === "win32",
+      env,
+    });
     this.active = child;
     child.unref();
     child.once("error", () => this.clear(child));
@@ -45,24 +51,25 @@ export class NativePersistentPopup implements PersistentPopup {
       ...process.env,
       POPUP_TITLE: message.title,
       POPUP_MESSAGE: message.message,
-      POPUP_STYLE: JSON.stringify(await this.style()),
+      POPUP_STYLE: JSON.stringify(await this.style(message)),
+      POPUP_LINUX_SCRIPT: LINUX_POPUP_PY,
     };
   }
 
-  private async style(): Promise<PopupConfig> {
-    if (!this.config) return DEFAULT_POPUP_CONFIG;
-    const settings = await this.config.get();
-    return settings.popup;
+  private async style(message: NotificationMessage): Promise<PopupStyle> {
+    const popup = this.config ? (await this.config.get()).popup : DEFAULT_POPUP_CONFIG;
+    const { events, ...globalStyle } = popup;
+    return { ...globalStyle, ...events[message.kind] };
   }
 
   private command(message: NotificationMessage): string[] | undefined {
     switch (this.platform) {
       case "win32":
-        return ["powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", this.windowsScript()];
+        return ["powershell", "-NoProfile", "-NonInteractive", "-STA", "-Command", this.windowsScript()];
       case "darwin":
         return ["osascript", "-e", `display alert "${this.quote(message.title)}" message "${this.quote(message.message)}"`];
       case "linux":
-        return ["notify-send", "-u", "critical", "-t", "0", message.title, message.message];
+        return ["sh", "-c", LINUX_POPUP_SH];
       default:
         return undefined;
     }
@@ -87,7 +94,7 @@ export class NativePersistentPopup implements PersistentPopup {
       FIND_TERMINAL_PS,
       FOCUS_TERMINAL_PS,
       "$script:terminalAtShow = ([Focuser]::GetForegroundWindow() -eq $script:target)",
-      '$diag = Join-Path $env:TEMP "opencode-notify-popup.log"',
+      '$diag = Join-Path $env:TEMP "opencode-desktop-notify-popup.log"',
       "$ErrorActionPreference = 'Continue'",
       'Set-Content -Path $diag -Value "init fg=$([Focuser]::GetForegroundWindow()) target=$script:target atShow=$script:terminalAtShow"',
       "try {",

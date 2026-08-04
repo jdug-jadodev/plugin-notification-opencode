@@ -9,7 +9,11 @@ export class NativeTerminalFocuser implements TerminalFocuser {
     const command = this.command();
     if (!command) return;
     await new Promise<void>((resolve) => {
-      const child = spawn(command[0], command.slice(1), { stdio: "ignore", detached: this.platform !== "win32" });
+      const child = spawn(command[0], command.slice(1), {
+        stdio: "ignore",
+        detached: this.platform !== "win32",
+        windowsHide: this.platform === "win32",
+      });
       child.unref();
       child.once("error", () => resolve());
       child.once("exit", () => resolve());
@@ -19,7 +23,7 @@ export class NativeTerminalFocuser implements TerminalFocuser {
   private command(): string[] | undefined {
     switch (this.platform) {
       case "win32":
-        return ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", this.windowsScript()];
+        return ["powershell", "-NoProfile", "-NonInteractive", "-Command", this.windowsScript()];
       case "darwin":
         return ["osascript", "-e", "tell application \"System Events\" to set frontmost of (first process whose name is \"Terminal\") to true"];
       case "linux":

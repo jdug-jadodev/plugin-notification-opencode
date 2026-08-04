@@ -76,6 +76,7 @@ export class NotifyOnEventUseCase implements NotificationHandler {
     const template = settings.messages[event.type];
     const session = sessionTitle ?? event.sessionId ?? "";
     return {
+      kind: event.type,
       title: this.fill(template.title, session, ""),
       message: this.fill(template.message, session, this.details(event)),
       icon: template.icon,

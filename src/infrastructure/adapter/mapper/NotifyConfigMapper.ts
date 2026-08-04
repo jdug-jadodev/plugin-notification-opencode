@@ -19,7 +19,11 @@ export class NotifyConfigMapper {
       quietHours: { ...DEFAULT_NOTIFY_CONFIG.quietHours, ...source.quietHours },
       toast: { ...DEFAULT_NOTIFY_CONFIG.toast, ...source.toast },
       titleFlash: { ...DEFAULT_NOTIFY_CONFIG.titleFlash, ...source.titleFlash },
-      popup: { ...DEFAULT_NOTIFY_CONFIG.popup, ...source.popup },
+      popup: {
+        ...DEFAULT_NOTIFY_CONFIG.popup,
+        ...source.popup,
+        events: { ...DEFAULT_NOTIFY_CONFIG.popup.events, ...source.popup?.events },
+      },
       sounds: { ...DEFAULT_NOTIFY_CONFIG.sounds, ...source.sounds },
       events: {
         [EventType.Complete]: channel(EventType.Complete),

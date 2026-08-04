@@ -1,8 +1,6 @@
-export type PopupConfig = {
-  blinkColors: string[];
-  blinkIntervalMs: number;
-  fontFamily: string;
-  fontSize: number;
-  textColor: string;
-  opacity: number;
+import type { PopupStyle } from "./PopupStyle.js";
+import type { EventType } from "../enum/EventType.js";
+
+export type PopupConfig = PopupStyle & {
+  events: Partial<Record<EventType, Partial<PopupStyle>>>;
 };

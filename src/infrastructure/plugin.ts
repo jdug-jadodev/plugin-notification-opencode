@@ -5,6 +5,7 @@ import { BunLogger } from "./adapter/BunLogger.js";
 import { JsonConfigLoader } from "./adapter/JsonConfigLoader.js";
 import { NativePersistentPopup } from "./adapter/NativePersistentPopup.js";
 import { NativeSoundPlayer } from "./adapter/NativeSoundPlayer.js";
+import { NativeTerminalFocusWatcher } from "./adapter/NativeTerminalFocusWatcher.js";
 import { NativeTerminalFocuser } from "./adapter/NativeTerminalFocuser.js";
 import { NodeNotifierSender } from "./adapter/NodeNotifierSender.js";
 import { OpencodeSessionStore } from "./adapter/OpencodeSessionStore.js";
@@ -19,7 +20,8 @@ const opencodeNotify: Plugin = async ({ client }, options) => {
   const sessions = new OpencodeSessionStore(client);
   const logger = new BunLogger(client);
   const terminalFocuser = new NativeTerminalFocuser();
-  const sender = new NodeNotifierSender(config, () => {
+  const focusWatcher = new NativeTerminalFocusWatcher();
+  const sender = new NodeNotifierSender(config, focusWatcher, () => {
     void terminalFocuser.focus();
   });
   const soundPlayer = new NativeSoundPlayer();

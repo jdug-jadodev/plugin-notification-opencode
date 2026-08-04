@@ -1,9 +1,9 @@
 {
   "events": {
-    "permission": { "system": true, "sound": false, "popup": true, "titleFlash": false },
-    "complete": { "system": true, "sound": false, "popup": true, "titleFlash": false },
-    "error": { "system": true, "sound": false, "popup": true, "titleFlash": false },
-    "question": { "system": true, "sound": false, "popup": true, "titleFlash": false }
+    "permission": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "complete": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "error": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "question": { "system": true, "sound": true, "popup": true, "titleFlash": false }
   },
   "messages": {
     "complete": { "title": "✅ opencode", "message": "Tarea completada: {session}" },
@@ -34,6 +34,12 @@
     "fontFamily": "Segoe UI",
     "fontSize": 12,
     "textColor": "#111111",
-    "opacity": 1
+    "opacity": 1,
+    "events": {
+      "complete": { "blinkColors": ["#14532D", "#22C55E"], "textColor": "#FFFFFF" },
+      "error": { "blinkColors": ["#7F1D1D", "#EF4444"], "textColor": "#FFFFFF" },
+      "permission": { "blinkColors": ["#78350F", "#F59E0B"], "textColor": "#111827" },
+      "question": { "blinkColors": ["#312E81", "#6366F1"], "textColor": "#FFFFFF" }
+    }
   }
 }

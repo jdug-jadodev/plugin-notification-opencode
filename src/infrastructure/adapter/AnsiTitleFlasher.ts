@@ -38,7 +38,7 @@ export class AnsiTitleFlasher implements TitleFlasher {
   private readTitle(): Promise<string> {
     if (process.platform !== "win32") return Promise.resolve("");
     return new Promise((resolve) => {
-      exec(`powershell -NoProfile -Command "[console]::Title"`, (error, stdout) => {
+      exec(`powershell -NoProfile -NonInteractive -Command "[console]::Title"`, { windowsHide: true }, (error, stdout) => {
         if (error) {
           resolve("");
           return;
