@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Automatically fit local PNG images into a transparent 64x64 canvas.
+- Preserve aspect ratio and real alpha transparency without modifying source files.
+- Cache transformed images by content and invalidate the cache when a source changes.
+- Decode PNG files before rendering and reject corrupt, animated, oversized, or excessively large inputs safely.
+
 ## 0.3.0
 
 - Add optional local 64x64 PNG images to Windows and Linux popups.

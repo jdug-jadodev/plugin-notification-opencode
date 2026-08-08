@@ -1,7 +1,8 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Event } from "@opencode-ai/sdk/v2";
+import sharp from "sharp";
 import { NotificationEventMapper } from "../src/application/mapper/NotificationEventMapper.js";
 import { NotifyOnEventUseCase } from "../src/application/usecase/NotifyOnEventUseCase.js";
 import type { NotificationMessage } from "../src/domain/entity/NotificationMessage.js";
@@ -42,23 +43,21 @@ const mainConfigPath = join(verifyDir, "notify.json");
 const cooldownConfigPath = join(verifyDir, "notify-cooldown.json");
 const globalImagePath = join(verifyDir, "global.png");
 const errorImagePath = join(verifyDir, "error.png");
-const invalidImagePath = join(verifyDir, "invalid.png");
+const resizableImagePath = join(verifyDir, "resizable.png");
 const corruptImagePath = join(verifyDir, "corrupt.png");
+const oversizedImagePath = join(verifyDir, "oversized.png");
 
-function pngHeader(width: number, height: number): Buffer {
-  const header = Buffer.alloc(24);
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
-  header.writeUInt32BE(13, 8);
-  header.write("IHDR", 12, "ascii");
-  header.writeUInt32BE(width, 16);
-  header.writeUInt32BE(height, 20);
-  return header;
+function png(width: number, height: number, color: string): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 4, background: color } })
+    .png()
+    .toBuffer();
 }
 
-await writeFile(globalImagePath, pngHeader(64, 64));
-await writeFile(errorImagePath, pngHeader(64, 64));
-await writeFile(invalidImagePath, pngHeader(32, 32));
+await writeFile(globalImagePath, await png(64, 64, "#14532D"));
+await writeFile(errorImagePath, await png(64, 64, "#7F1D1D"));
+await writeFile(resizableImagePath, await png(32, 16, "#22C55E"));
 await writeFile(corruptImagePath, "not a PNG");
+await writeFile(oversizedImagePath, Buffer.alloc(2 * 1024 * 1024 + 1));
 
 await writeFile(
   mainConfigPath,
@@ -364,6 +363,58 @@ check(!resolvedPermissionStyle.image.enabled, "evento puede desactivar la imagen
 const popupEnv = await popupAdapter.env({ kind: EventType.Error, title: "Error", message: "falló" });
 check(popupEnv.POPUP_IMAGE_PATH === errorImagePath, "fallback recibe la ruta PNG validada");
 
+const resizeLogs: string[] = [];
+const resizeConfigPath = join(verifyDir, "notify-resize-image.json");
+await writeFile(
+  resizeConfigPath,
+  JSON.stringify({ popup: { image: { enabled: true, path: "./resizable.png", position: "right" } } }),
+);
+const resizePopup = new NativePersistentPopup(new JsonConfigLoader(resizeConfigPath), "win32", undefined, {
+  debug: (entry) => resizeLogs.push(entry),
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+}) as unknown as {
+  style(message: NotificationMessage): Promise<{ image: { enabled: boolean; path?: string; position: string } }>;
+};
+const resizedImage = (
+  await resizePopup.style({ kind: EventType.Complete, title: "OpenCode", message: "redimensionada" })
+).image;
+check(
+  resizedImage.enabled && resizedImage.path !== undefined && resizedImage.path !== resizableImagePath,
+  "PNG de cualquier dimensión utiliza una copia en caché",
+);
+const resizedPath = resizedImage.path ?? "";
+const resizedMetadata = await sharp(resizedPath).metadata();
+check(resizedMetadata.width === 64 && resizedMetadata.height === 64, "copia PNG se transforma a 64x64");
+const resizedPixels = await sharp(resizedPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+const cornerAlpha = resizedPixels.data[3];
+const centerAlphaIndex = (32 * resizedPixels.info.width + 32) * resizedPixels.info.channels + 3;
+check(
+  cornerAlpha === 0 && resizedPixels.data[centerAlphaIndex] === 255,
+  "ajuste contain conserva imagen y añade márgenes transparentes",
+);
+const originalMetadata = await sharp(resizableImagePath).metadata();
+check(originalMetadata.width === 32 && originalMetadata.height === 16, "transformación no modifica el PNG original");
+const firstCacheStat = await stat(resizedPath);
+const cachedPopup = new NativePersistentPopup(new JsonConfigLoader(resizeConfigPath), "win32") as unknown as {
+  style(message: NotificationMessage): Promise<{ image: { enabled: boolean; path?: string } }>;
+};
+const cachedImage = (
+  await cachedPopup.style({ kind: EventType.Complete, title: "OpenCode", message: "caché" })
+).image;
+const secondCacheStat = await stat(cachedImage.path ?? "");
+check(
+  cachedImage.path === resizedImage.path && secondCacheStat.mtimeMs === firstCacheStat.mtimeMs,
+  "otra instancia reutiliza la copia en caché",
+);
+await writeFile(resizableImagePath, await png(32, 16, "#6366F1"));
+const changedImage = (
+  await resizePopup.style({ kind: EventType.Complete, title: "OpenCode", message: "contenido nuevo" })
+).image;
+check(changedImage.path !== resizedImage.path, "cambio de contenido invalida la caché aunque conserve la ruta");
+check(resizeLogs.some((entry) => entry.includes("32x16 to 64x64")), "redimensionado queda registrado en debug");
+
 const imageWarnings: string[] = [];
 async function invalidImageStyle(path: string, position = "left"): Promise<{ enabled: boolean; position: string }> {
   const configPath = join(verifyDir, `notify-invalid-image-${imageWarnings.length}.json`);
@@ -379,19 +430,19 @@ async function invalidImageStyle(path: string, position = "left"): Promise<{ ena
   return (await adapter.style({ kind: EventType.Complete, title: "OpenCode", message: "listo" })).image;
 }
 
-const invalidImageStyleResult = await invalidImageStyle("./invalid.png", "sideways");
-check(!invalidImageStyleResult.enabled, "PNG con dimensiones inválidas conserva popup sin imagen");
+const invalidImageStyleResult = await invalidImageStyle("./corrupt.png", "sideways");
+check(!invalidImageStyleResult.enabled, "PNG corrupto conserva popup sin imagen");
 check(invalidImageStyleResult.position === "left", "posición PNG inválida usa left");
-check(imageWarnings.some((warning) => warning.includes("expected 64x64")), "PNG inválido registra advertencia");
+check(imageWarnings.some((warning) => warning.includes("invalid PNG header")), "PNG inválido registra advertencia");
 const warningCount = imageWarnings.length;
 check(!(await invalidImageStyle("./missing.png")).enabled, "PNG inexistente conserva popup sin imagen");
 check(!(await invalidImageStyle("./image.jpg")).enabled, "extensión no PNG conserva popup sin imagen");
-check(!(await invalidImageStyle("./corrupt.png")).enabled, "firma PNG corrupta conserva popup sin imagen");
+check(!(await invalidImageStyle("./oversized.png")).enabled, "PNG de más de 2 MB conserva popup sin imagen");
 check(imageWarnings.length === warningCount + 3, "cada imagen rechazada registra advertencia");
 check(
   imageWarnings.some((warning) => warning.includes("only PNG files")) &&
-    imageWarnings.some((warning) => warning.includes("invalid PNG header")),
-  "archivos no PNG registran advertencia",
+    imageWarnings.some((warning) => warning.includes("file exceeds 2 MB")),
+  "extensión y tamaño inválidos registran advertencia",
 );
 const defaults = await new JsonConfigLoader(join(verifyDir, "missing.json")).get();
 check(defaults.events.complete.sound, "sonido viene activo por defecto");

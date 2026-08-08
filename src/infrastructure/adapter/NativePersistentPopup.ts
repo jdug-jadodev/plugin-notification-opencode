@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { open, stat } from "node:fs/promises";
-import { extname } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
+import sharp from "sharp";
 import type { NotificationMessage } from "../../domain/entity/NotificationMessage.js";
 import type { PopupStyle } from "../../domain/entity/PopupStyle.js";
 import type { Logger } from "../../domain/port/out/Logger.js";
@@ -13,7 +16,10 @@ import { DEFAULT_POPUP_CONFIG } from "../config/defaultNotifyConfig.js";
 export class NativePersistentPopup implements PersistentPopup {
   private static readonly ACTIVATED_EXIT_CODE = 10;
   private static readonly MAX_PNG_BYTES = 2 * 1024 * 1024;
+  private static readonly MAX_PNG_PIXELS = 4096 * 4096;
+  private static readonly IMAGE_CACHE_DIR = join(tmpdir(), "opencode-desktop-notify", "images");
   private active: ChildProcess | undefined;
+  private readonly imageTransforms = new Map<string, Promise<string>>();
 
   constructor(
     private readonly config?: NotifierConfig,
@@ -97,26 +103,88 @@ export class NativePersistentPopup implements PersistentPopup {
         return this.disableImage(style, "file exceeds 2 MB");
       }
 
-      const handle = await open(path, "r");
-      try {
-        const header = Buffer.alloc(24);
-        const { bytesRead } = await handle.read(header, 0, header.length, 0);
-        const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-        const validHeader =
-          bytesRead === header.length &&
-          header.subarray(0, signature.length).equals(signature) &&
-          header.toString("ascii", 12, 16) === "IHDR";
-        if (!validHeader) return this.disableImage(style, "invalid PNG header");
-        const width = header.readUInt32BE(16);
-        const height = header.readUInt32BE(20);
-        if (width !== 64 || height !== 64) return this.disableImage(style, `expected 64x64, received ${width}x${height}`);
-      } finally {
-        await handle.close();
+      const source = await readFile(path);
+      const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const validHeader =
+        source.length >= 24 &&
+        source.subarray(0, signature.length).equals(signature) &&
+        source.toString("ascii", 12, 16) === "IHDR";
+      if (!validHeader) return this.disableImage(style, "invalid PNG header");
+
+      const options = { failOn: "error" as const, limitInputPixels: NativePersistentPopup.MAX_PNG_PIXELS };
+      const metadata = await sharp(source, options).metadata();
+      if (metadata.format !== "png") return this.disableImage(style, "decoded image is not PNG");
+      if ((metadata.pages ?? 1) > 1) return this.disableImage(style, "animated PNG files are not supported");
+      if (!metadata.width || !metadata.height) return this.disableImage(style, "PNG dimensions are unavailable");
+      if (metadata.width === 64 && metadata.height === 64) {
+        await sharp(source, options).raw().toBuffer();
+        return style;
       }
+
+      const transformedPath = await this.transformImage(source, path, metadata.width, metadata.height);
+      return { ...style, image: { ...style.image, path: transformedPath } };
     } catch (error) {
       return this.disableImage(style, error instanceof Error ? error.message : String(error));
     }
-    return style;
+  }
+
+  private async transformImage(source: Buffer, sourcePath: string, width: number, height: number): Promise<string> {
+    const key = createHash("sha256").update("contain-64-v1").update(source).digest("hex");
+    const active = this.imageTransforms.get(key);
+    if (active) return active;
+
+    const transformation = this.writeTransformedImage(source, key);
+    this.imageTransforms.set(key, transformation);
+    try {
+      const outputPath = await transformation;
+      this.logger?.debug(`popup image resized from ${width}x${height} to 64x64: ${sourcePath}`);
+      return outputPath;
+    } catch (error) {
+      this.imageTransforms.delete(key);
+      throw error;
+    }
+  }
+
+  private async writeTransformedImage(source: Buffer, key: string): Promise<string> {
+    await mkdir(NativePersistentPopup.IMAGE_CACHE_DIR, { recursive: true });
+    const outputPath = join(NativePersistentPopup.IMAGE_CACHE_DIR, `${key}.png`);
+    if (await this.isCachedImage(outputPath)) return outputPath;
+
+    const temporaryPath = join(NativePersistentPopup.IMAGE_CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp`);
+    try {
+      await sharp(source, { failOn: "error", limitInputPixels: NativePersistentPopup.MAX_PNG_PIXELS })
+        .resize(64, 64, {
+          fit: "contain",
+          position: "centre",
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .png()
+        .toFile(temporaryPath);
+      try {
+        await rename(temporaryPath, outputPath);
+      } catch {
+        if (!(await this.isCachedImage(outputPath))) {
+          await rm(outputPath, { force: true });
+          try {
+            await rename(temporaryPath, outputPath);
+          } catch (retryError) {
+            if (!(await this.isCachedImage(outputPath))) throw retryError;
+          }
+        }
+      }
+      return outputPath;
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
+  }
+
+  private async isCachedImage(path: string): Promise<boolean> {
+    try {
+      const metadata = await sharp(path, { limitInputPixels: 64 * 64 }).metadata();
+      return metadata.format === "png" && metadata.width === 64 && metadata.height === 64;
+    } catch {
+      return false;
+    }
   }
 
   private disableImage(style: PopupStyle, reason: string): PopupStyle {

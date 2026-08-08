@@ -86,6 +86,19 @@ con valores predeterminados; el parpadeo del título queda apagado.
 
 Completa una respuesta corta para verificarlo.
 
+### Cómo se ejecuta el plugin
+
+OpenCode usa Bun para descargar el paquete npm y sus dependencias en su propia
+caché. Después importa el plugin dentro del proceso de OpenCode y registra sus
+hooks de eventos. No instala un daemon, servicio de Windows, servidor ni proceso
+permanente en segundo plano.
+
+El plugin funciona mientras OpenCode está abierto. PowerShell, Python o el shell
+solo se inician como procesos auxiliares cuando hace falta mostrar un popup,
+reproducir audio o enfocar la terminal. El motor de imágenes también se instala
+automáticamente como dependencia del paquete; no requiere ImageMagick, Pillow ni
+una instalación manual con npm o pnpm.
+
 ### 4. Actualiza una instalación existente
 
 OpenCode conserva los plugins npm en caché. Los usuarios nuevos reciben la
@@ -95,12 +108,12 @@ versión anterior. Para forzar esta actualización, indica la versión publicada
 ```jsonc
 {
   "plugin": [
-    "opencode-desktop-notify@0.3.0"
+    "opencode-desktop-notify@0.4.0"
   ]
 }
 ```
 
-Reinicia OpenCode después del cambio. En una versión futura, reemplaza `0.3.0`
+Reinicia OpenCode después del cambio. En una versión futura, reemplaza `0.4.0`
 por la versión que quieras instalar. Como alternativa, elimina el paquete de la
 caché de OpenCode y conserva el nombre sin versión.
 
@@ -216,9 +229,10 @@ C:\Users\TU_USUARIO\.config\opencode\
 La imagen debe cumplir estas reglas:
 
 - Formato PNG local, no URL ni GIF.
-- Dimensiones exactas de `64x64` píxeles; el plugin no la redimensiona.
 - Tamaño máximo de 2 MB.
-- Puede tener transparencia.
+- Hasta 16,7 millones de píxeles para evitar consumos de memoria excesivos.
+- Cualquier proporción: el plugin la ajusta dentro de un lienzo transparente `64x64`.
+- Puede tener transparencia, que se conserva durante la transformación.
 
 Guarda la imagen como
 `%USERPROFILE%\.config\opencode\assets\images\popup.png`. Puedes comprobar sus
@@ -231,7 +245,11 @@ $image = [System.Drawing.Image]::FromFile("$HOME\.config\opencode\assets\images\
 $image.Dispose()
 ```
 
-El resultado debe ser `64x64`.
+El resultado puede tener otras dimensiones. En el primer aviso, el plugin crea
+una copia `64x64` centrada, conserva la proporción y añade márgenes transparentes
+cuando hacen falta. La copia se reutiliza desde la caché y el original no cambia.
+Un fondo blanco o cuadriculado incrustado en la imagen continuará siendo visible;
+el redimensionado no elimina fondos.
 
 Para Windows, usa archivos WAV. PCM WAV es la opción más compatible con
 `Media.SoundPlayer`. Prueba uno antes de configurar el plugin:
@@ -411,15 +429,19 @@ Guarda los recursos con esta estructura:
         └── attention.wav
 ```
 
-El PNG debe medir exactamente `64x64` y pesar como máximo 2 MB. Puedes leer las
-dimensiones directamente desde su cabecera sin instalar otra biblioteca:
+El PNG puede tener cualquier proporción, debe pesar como máximo 2 MB y no puede
+superar 16,7 millones de píxeles. Puedes consultar sus dimensiones directamente
+desde la cabecera sin instalar otra biblioteca:
 
 ```sh
 python3 -c "import struct; f=open('$HOME/.config/opencode/assets/images/popup.png','rb'); f.seek(16); print('%dx%d' % struct.unpack('>II', f.read(8)))"
 ```
 
-El resultado esperado es `64x64`. Para el sonido, WAV es la opción más portable.
-Prueba el archivo con el reproductor encontrado en el paso anterior, por ejemplo:
+El plugin ajustará ese resultado proporcionalmente dentro de un lienzo
+transparente `64x64`, guardará la copia en caché y mantendrá intacto el original.
+No necesitas instalar Pillow ni ImageMagick. Para el sonido, WAV es la opción más
+portable. Prueba el archivo con el reproductor encontrado en el paso anterior,
+por ejemplo:
 
 ```sh
 canberra-gtk-play -f "$HOME/.config/opencode/assets/sounds/complete.wav"
@@ -818,7 +840,10 @@ Cada evento puede reemplazar la ruta o posición global, o desactivar la imagen:
 }
 ```
 
-- Solo se admiten archivos PNG locales de exactamente `64x64` píxeles y hasta 2 MB.
+- Solo se admiten archivos PNG locales de hasta 2 MB y 16,7 millones de píxeles.
+- Cualquier dimensión se ajusta proporcionalmente dentro de un lienzo transparente `64x64`.
+- La transformación se guarda en caché por contenido y nunca modifica el original.
+- La transparencia real se conserva; un fondo blanco incrustado no se elimina.
 - `position` acepta `left` o `right`; cualquier otro valor usa `left`.
 - Las rutas relativas se resuelven desde la carpeta que contiene `notify.json`.
 - Una imagen específica hereda los campos omitidos de la imagen global.
@@ -838,7 +863,7 @@ al toast del sistema.
 | `fontSize` | número | Tamaño del texto |
 | `textColor` | texto | Color hexadecimal del texto |
 | `opacity` | número | Opacidad entre `0.2` y `1` |
-| `image` | objeto | PNG opcional global de `64x64`, con posición izquierda o derecha |
+| `image` | objeto | PNG local opcional, ajustado automáticamente a `64x64` |
 | `events` | objeto | Reemplazos parciales para cada tipo de evento |
 
 Los campos globales funcionan como base. `popup.events.<evento>` reemplaza solo

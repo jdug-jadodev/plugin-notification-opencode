@@ -1,6 +1,6 @@
 {
   "name": "opencode-desktop-notify",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Desktop notifications, persistent popups, and terminal focus for OpenCode.",
   "type": "module",
   "main": "./dist/infrastructure/plugin.js",
@@ -46,7 +46,8 @@
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.11",
     "@opencode-ai/sdk": "^1.18.11",
-    "node-notifier": "npm:toasted-notifier@^10.1.0"
+    "node-notifier": "npm:toasted-notifier@^10.1.0",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
