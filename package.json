@@ -1,6 +1,6 @@
 {
   "name": "opencode-desktop-notify",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Desktop notifications, persistent popups, and terminal focus for OpenCode.",
   "type": "module",
   "main": "./dist/infrastructure/plugin.js",

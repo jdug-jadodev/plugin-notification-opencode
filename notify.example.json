@@ -35,6 +35,7 @@
     "fontSize": 12,
     "textColor": "#111111",
     "opacity": 1,
+    "image": { "enabled": false, "position": "left" },
     "events": {
       "complete": { "blinkColors": ["#14532D", "#22C55E"], "textColor": "#FFFFFF" },
       "error": { "blinkColors": ["#7F1D1D", "#EF4444"], "textColor": "#FFFFFF" },

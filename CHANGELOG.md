@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add optional local 64x64 PNG images to Windows and Linux popups.
+- Support one global popup image or per-event image overrides.
+- Resolve relative image paths from the directory containing `notify.json`.
+- Support left and right image placement with safe text-only fallback.
+
 ## 0.2.0
 
 - Close persistent Windows toasts when the OpenCode terminal regains focus.

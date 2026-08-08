@@ -9,6 +9,7 @@ export const DEFAULT_POPUP_CONFIG: PopupConfig = {
   fontSize: 12,
   textColor: "#111111",
   opacity: 1,
+  image: { enabled: false, position: "left" },
   events: {
     [EventType.Complete]: { blinkColors: ["#14532D", "#22C55E"], textColor: "#FFFFFF" },
     [EventType.Error]: { blinkColors: ["#7F1D1D", "#EF4444"], textColor: "#FFFFFF" },

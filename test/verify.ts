@@ -40,6 +40,25 @@ function check(condition: unknown, label: string): void {
 const verifyDir = await mkdtemp(join(tmpdir(), "opencode-desktop-notify-verify-"));
 const mainConfigPath = join(verifyDir, "notify.json");
 const cooldownConfigPath = join(verifyDir, "notify-cooldown.json");
+const globalImagePath = join(verifyDir, "global.png");
+const errorImagePath = join(verifyDir, "error.png");
+const invalidImagePath = join(verifyDir, "invalid.png");
+const corruptImagePath = join(verifyDir, "corrupt.png");
+
+function pngHeader(width: number, height: number): Buffer {
+  const header = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+  header.writeUInt32BE(13, 8);
+  header.write("IHDR", 12, "ascii");
+  header.writeUInt32BE(width, 16);
+  header.writeUInt32BE(height, 20);
+  return header;
+}
+
+await writeFile(globalImagePath, pngHeader(64, 64));
+await writeFile(errorImagePath, pngHeader(64, 64));
+await writeFile(invalidImagePath, pngHeader(32, 32));
+await writeFile(corruptImagePath, "not a PNG");
 
 await writeFile(
   mainConfigPath,
@@ -60,8 +79,10 @@ await writeFile(
       blinkColors: ["#101820"],
       textColor: "#FFFFFF",
       fontSize: 13,
+      image: { enabled: true, path: "./global.png", position: "right" },
       events: {
-        error: { blinkColors: ["#7F1D1D", "#EF4444"] },
+        error: { blinkColors: ["#7F1D1D", "#EF4444"], image: { path: "./error.png", position: "left" } },
+        permission: { image: { enabled: false } },
       },
     },
   }),
@@ -309,14 +330,72 @@ check(cooldownSender.sent.length === 2, "cooldown superado vuelve a notificar");
 console.log("-- estilos por evento --");
 const loadedConfig = await new JsonConfigLoader(mainConfigPath).get();
 check(loadedConfig.popup.events.error?.blinkColors?.[1] === "#EF4444", "config carga override de error");
+check(loadedConfig.popup.image.path === globalImagePath, "ruta PNG global se resuelve desde notify.json");
+check(loadedConfig.popup.events.error?.image?.path === errorImagePath, "ruta PNG por evento se resuelve desde notify.json");
 const popupAdapter = new NativePersistentPopup(new JsonConfigLoader(mainConfigPath), "win32") as unknown as {
-  style(message: NotificationMessage): Promise<{ blinkColors: string[]; textColor: string; fontSize: number }>;
+  env(message: NotificationMessage): Promise<NodeJS.ProcessEnv>;
+  style(message: NotificationMessage): Promise<{
+    blinkColors: string[];
+    textColor: string;
+    fontSize: number;
+    image: { enabled: boolean; path?: string; position: string };
+  }>;
 };
 const resolvedErrorStyle = await popupAdapter.style({ kind: EventType.Error, title: "Error", message: "falló" });
 check(resolvedErrorStyle.blinkColors[0] === "#7F1D1D", "popup aplica colores del evento");
 check(resolvedErrorStyle.textColor === "#FFFFFF" && resolvedErrorStyle.fontSize === 13, "override hereda estilo global");
+check(
+  resolvedErrorStyle.image.enabled &&
+    resolvedErrorStyle.image.path === errorImagePath &&
+    resolvedErrorStyle.image.position === "left",
+  "imagen por evento hereda enabled y reemplaza ruta y posición",
+);
+const resolvedQuestionStyle = await popupAdapter.style({ kind: EventType.Question, title: "Pregunta", message: "respuesta" });
+check(
+  resolvedQuestionStyle.image.enabled && resolvedQuestionStyle.image.path === globalImagePath,
+  "evento sin imagen propia utiliza la imagen global",
+);
+const resolvedPermissionStyle = await popupAdapter.style({
+  kind: EventType.Permission,
+  title: "Permiso",
+  message: "write",
+});
+check(!resolvedPermissionStyle.image.enabled, "evento puede desactivar la imagen global");
+const popupEnv = await popupAdapter.env({ kind: EventType.Error, title: "Error", message: "falló" });
+check(popupEnv.POPUP_IMAGE_PATH === errorImagePath, "fallback recibe la ruta PNG validada");
+
+const imageWarnings: string[] = [];
+async function invalidImageStyle(path: string, position = "left"): Promise<{ enabled: boolean; position: string }> {
+  const configPath = join(verifyDir, `notify-invalid-image-${imageWarnings.length}.json`);
+  await writeFile(configPath, JSON.stringify({ popup: { image: { enabled: true, path, position } } }));
+  const adapter = new NativePersistentPopup(new JsonConfigLoader(configPath), "win32", undefined, {
+    debug: () => {},
+    info: () => {},
+    warn: (warning) => imageWarnings.push(warning),
+    error: () => {},
+  }) as unknown as {
+    style(message: NotificationMessage): Promise<{ image: { enabled: boolean; position: string } }>;
+  };
+  return (await adapter.style({ kind: EventType.Complete, title: "OpenCode", message: "listo" })).image;
+}
+
+const invalidImageStyleResult = await invalidImageStyle("./invalid.png", "sideways");
+check(!invalidImageStyleResult.enabled, "PNG con dimensiones inválidas conserva popup sin imagen");
+check(invalidImageStyleResult.position === "left", "posición PNG inválida usa left");
+check(imageWarnings.some((warning) => warning.includes("expected 64x64")), "PNG inválido registra advertencia");
+const warningCount = imageWarnings.length;
+check(!(await invalidImageStyle("./missing.png")).enabled, "PNG inexistente conserva popup sin imagen");
+check(!(await invalidImageStyle("./image.jpg")).enabled, "extensión no PNG conserva popup sin imagen");
+check(!(await invalidImageStyle("./corrupt.png")).enabled, "firma PNG corrupta conserva popup sin imagen");
+check(imageWarnings.length === warningCount + 3, "cada imagen rechazada registra advertencia");
+check(
+  imageWarnings.some((warning) => warning.includes("only PNG files")) &&
+    imageWarnings.some((warning) => warning.includes("invalid PNG header")),
+  "archivos no PNG registran advertencia",
+);
 const defaults = await new JsonConfigLoader(join(verifyDir, "missing.json")).get();
 check(defaults.events.complete.sound, "sonido viene activo por defecto");
+check(!defaults.popup.image.enabled && defaults.popup.image.position === "left", "imagen popup viene desactivada por defecto");
 
 console.log("-- ciclo de vida del toast --");
 const message: NotificationMessage = { kind: EventType.Complete, title: "OpenCode", message: "listo" };
@@ -332,7 +411,15 @@ check(WAIT_FOR_TERMINAL_FOCUS_PS.includes("$wasAway"), "watcher espera salida y 
 
 console.log("-- backends Linux --");
 check(LINUX_POPUP_PY.includes("import tkinter") && LINUX_POPUP_PY.includes("blinkColors"), "popup Tkinter usa estilos");
+check(
+  LINUX_POPUP_PY.includes("tk.PhotoImage") && LINUX_POPUP_PY.includes("image_position") && LINUX_POPUP_PY.includes("64"),
+  "popup Tkinter carga PNG 64x64 a izquierda o derecha",
+);
 check(LINUX_POPUP_SH.includes("zenity") && LINUX_POPUP_SH.includes("notify-send"), "popup Linux tiene fallbacks");
+check(
+  LINUX_POPUP_SH.includes("--window-icon") && LINUX_POPUP_SH.includes("notify-send -u critical -t 0 -i"),
+  "fallbacks Linux reciben el PNG como icono",
+);
 check(
   LINUX_DEFAULT_SOUND_SH.includes("canberra-gtk-play") &&
     LINUX_DEFAULT_SOUND_SH.includes("paplay") &&
@@ -365,6 +452,13 @@ check(
   popupScript.includes("Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing"),
   "popup referencia WinForms al compilar NoActivateForm",
 );
+check(
+  popupScript.includes("System.Windows.Forms.PictureBox") &&
+    popupScript.includes("System.Drawing.Image]::FromFile") &&
+    popupScript.includes("$picture.Add_Click"),
+  "popup Windows muestra PNG y conserva activación por clic",
+);
+check(popupScript.includes("$picture.Image.Dispose()"), "popup Windows libera la imagen al cerrar");
 check(popupScript.includes("$script:activated = $true") && popupScript.includes("exit 10"), "popup señala el clic");
 const fakePopupChild = {};
 windowsPopup.active = fakePopupChild;

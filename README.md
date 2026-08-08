@@ -95,12 +95,12 @@ versión anterior. Para forzar esta actualización, indica la versión publicada
 ```jsonc
 {
   "plugin": [
-    "opencode-desktop-notify@0.2.0"
+    "opencode-desktop-notify@0.3.0"
   ]
 }
 ```
 
-Reinicia OpenCode después del cambio. En una versión futura, reemplaza `0.2.0`
+Reinicia OpenCode después del cambio. En una versión futura, reemplaza `0.3.0`
 por la versión que quieras instalar. Como alternativa, elimina el paquete de la
 caché de OpenCode y conserva el nombre sin versión.
 
@@ -138,6 +138,405 @@ Cada evento tiene cuatro interruptores independientes:
 
 El toast del sistema es silencioso a propósito. El canal `sound` controla todo el
 audio y evita que se reproduzcan dos sonidos al mismo tiempo.
+
+## Guías completas por sistema
+
+Estas dos guías parten desde cero y terminan con colores, una imagen PNG y
+sonidos propios. No necesitas instalar el paquete con npm: OpenCode se encarga de
+descargarlo cuando encuentra su nombre en `opencode.jsonc`.
+
+- [Guía 1: Windows desde cero](#guia-windows)
+- [Guía 2: Linux desde cero](#guia-linux)
+
+Antes de comenzar, conviene entender cómo se arma cada aviso:
+
+| Bloque | Qué controla |
+| --- | --- |
+| `events.<evento>` | Activa o desactiva toast, sonido, popup y título |
+| `sounds.<evento>` | Selecciona el archivo de audio de ese evento |
+| `popup` | Define fuente, tamaño, opacidad, velocidad e imagen global |
+| `popup.events.<evento>` | Reemplaza solo los estilos indicados para ese evento |
+| `messages.<evento>` | Cambia el título y texto que verá el usuario |
+
+Los nombres de evento disponibles son `complete`, `error`, `permission` y
+`question`. Todos los campos son opcionales y los valores omitidos conservan la
+configuración predeterminada.
+
+<a id="guia-windows"></a>
+
+### Guía 1: Windows desde cero
+
+Windows no necesita una biblioteca gráfica adicional. El popup utiliza
+WinForms y System.Drawing a través de Windows PowerShell 5.1, componentes que ya
+forman parte de Windows 10 y Windows 11.
+
+#### Paso 1. Activa el plugin
+
+Crea o abre `%USERPROFILE%\.config\opencode\opencode.jsonc` y añade:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "opencode-desktop-notify"
+  ]
+}
+```
+
+Si ya hay otros proveedores, modelos o plugins, conserva esas propiedades y
+añade únicamente la entrada `opencode-desktop-notify` al arreglo existente.
+
+#### Paso 2. Prepara las carpetas
+
+Ejecuta en PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force -Path `
+  "$HOME\.config\opencode\assets\images", `
+  "$HOME\.config\opencode\assets\sounds"
+```
+
+La estructura resultante será similar a esta:
+
+```text
+C:\Users\TU_USUARIO\.config\opencode\
+├── opencode.jsonc
+├── notify.json
+└── assets\
+    ├── images\
+    │   └── popup.png
+    └── sounds\
+        ├── complete.wav
+        ├── error.wav
+        └── attention.wav
+```
+
+#### Paso 3. Prepara la imagen y los sonidos
+
+La imagen debe cumplir estas reglas:
+
+- Formato PNG local, no URL ni GIF.
+- Dimensiones exactas de `64x64` píxeles; el plugin no la redimensiona.
+- Tamaño máximo de 2 MB.
+- Puede tener transparencia.
+
+Guarda la imagen como
+`%USERPROFILE%\.config\opencode\assets\images\popup.png`. Puedes comprobar sus
+dimensiones con PowerShell:
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+$image = [System.Drawing.Image]::FromFile("$HOME\.config\opencode\assets\images\popup.png")
+"$($image.Width)x$($image.Height)"
+$image.Dispose()
+```
+
+El resultado debe ser `64x64`.
+
+Para Windows, usa archivos WAV. PCM WAV es la opción más compatible con
+`Media.SoundPlayer`. Prueba uno antes de configurar el plugin:
+
+```powershell
+(New-Object Media.SoundPlayer "$HOME\.config\opencode\assets\sounds\complete.wav").PlaySync()
+```
+
+#### Paso 4. Crea `notify.json`
+
+Crea `%USERPROFILE%\.config\opencode\notify.json` con esta configuración y
+reemplaza `TU_USUARIO` en las rutas de sonido:
+
+```json
+{
+  "events": {
+    "complete": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "error": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "permission": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "question": { "system": true, "sound": true, "popup": true, "titleFlash": false }
+  },
+  "sounds": {
+    "complete": "C:/Users/TU_USUARIO/.config/opencode/assets/sounds/complete.wav",
+    "error": "C:/Users/TU_USUARIO/.config/opencode/assets/sounds/error.wav",
+    "permission": "C:/Users/TU_USUARIO/.config/opencode/assets/sounds/attention.wav",
+    "question": "C:/Users/TU_USUARIO/.config/opencode/assets/sounds/attention.wav"
+  },
+  "popup": {
+    "blinkColors": ["#0F172A", "#1E293B"],
+    "blinkIntervalMs": 600,
+    "fontFamily": "Segoe UI",
+    "fontSize": 12,
+    "textColor": "#FFFFFF",
+    "opacity": 1,
+    "image": {
+      "enabled": true,
+      "path": "./assets/images/popup.png",
+      "position": "left"
+    },
+    "events": {
+      "complete": { "blinkColors": ["#14532D", "#22C55E"], "textColor": "#FFFFFF" },
+      "error": {
+        "blinkColors": ["#7F1D1D", "#EF4444"],
+        "textColor": "#FFFFFF",
+        "image": { "position": "right" }
+      },
+      "permission": { "blinkColors": ["#78350F", "#F59E0B"], "textColor": "#111827" },
+      "question": { "blinkColors": ["#312E81", "#6366F1"], "textColor": "#FFFFFF" }
+    }
+  }
+}
+```
+
+Esta configuración produce los siguientes resultados:
+
+| Evento | Apariencia | Sonido |
+| --- | --- | --- |
+| `complete` | Parpadeo verde, imagen a la izquierda | `complete.wav` |
+| `error` | Parpadeo rojo, imagen a la derecha | `error.wav` |
+| `permission` | Parpadeo ámbar, imagen a la izquierda | `attention.wav` |
+| `question` | Parpadeo índigo, imagen a la izquierda | `attention.wav` |
+
+La ruta de la imagen es relativa a `notify.json`. Las rutas de sonido son
+absolutas porque no se expanden variables como `%USERPROFILE%` dentro del JSON.
+En Windows puedes usar `/` como en el ejemplo o escapar cada `\` como `\\`.
+
+#### Paso 5. Ajusta los colores
+
+`blinkColors` acepta colores hexadecimales `#RRGGBB`:
+
+```json
+{ "blinkColors": ["#2563EB"] }
+```
+
+Un color mantiene el fondo estático. Dos o más colores crean el parpadeo y
+`blinkIntervalMs` determina los milisegundos entre cada cambio. `textColor`
+controla el contraste del texto, mientras que `opacity` acepta valores entre
+`0.2` y `1`.
+
+#### Paso 6. Reinicia y prueba
+
+Cierra todas las instancias de OpenCode y vuelve a iniciarlo. Prueba una tarea
+corta para obtener `complete`; una solicitud de permiso o una pregunta permiten
+comprobar los demás estilos. En Windows, al pulsar cualquier parte del popup,
+incluida la imagen, la terminal se restaura y recibe el foco.
+
+<a id="guia-linux"></a>
+
+### Guía 2: Linux desde cero
+
+En Linux, Tkinter es la biblioteca gráfica que permite mostrar el popup completo
+con colores, parpadeo, fuente, opacidad e imagen. No es una dependencia npm y el
+plugin no puede instalarla automáticamente: se instala desde el gestor de
+paquetes de la distribución.
+
+El orden de backends gráficos es:
+
+| Backend | Uso | Personalización disponible |
+| --- | --- | --- |
+| Tkinter | Primera opción | Colores, parpadeo, fuente, opacidad y PNG a izquierda o derecha |
+| Zenity | Primer respaldo | Diálogo persistente e imagen como icono, sin colores propios |
+| `notify-send` | Último respaldo | Notificación del escritorio e icono, apariencia controlada por el sistema |
+
+#### Paso 1. Instala las dependencias
+
+Usa el bloque correspondiente a tu distribución. Estos comandos instalan
+Tkinter, los dos backends gráficos de respaldo y al menos un reproductor de
+audio habitual.
+
+```sh
+# Debian / Ubuntu
+sudo apt update
+sudo apt install python3-tk zenity libnotify-bin gnome-session-canberra pulseaudio-utils
+```
+
+```sh
+# Fedora
+sudo dnf install python3-tkinter zenity libnotify libcanberra-gtk3 pulseaudio-utils
+```
+
+```sh
+# Arch Linux
+sudo pacman -S tk zenity libnotify libcanberra libpulse
+```
+
+Si tu equipo usa otro sistema de audio, también sirven `pw-play` de PipeWire,
+`aplay` de ALSA o `ffplay` de FFmpeg. No necesitas instalarlos todos: basta con
+que al menos uno pueda reproducir el formato elegido.
+
+Verifica los componentes antes de continuar:
+
+```sh
+python3 -c "import tkinter; print('Tkinter', tkinter.TkVersion)"
+command -v zenity
+command -v notify-send
+command -v canberra-gtk-play || command -v paplay || command -v pw-play || command -v ffplay || command -v aplay
+```
+
+La primera línea debe imprimir la versión de Tk. En las demás líneas basta con
+que aparezca la ruta de un backend gráfico de respaldo y de un reproductor de
+audio.
+
+#### Paso 2. Activa el plugin
+
+Crea o abre `~/.config/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "opencode-desktop-notify"
+  ]
+}
+```
+
+No ejecutes `npm install` para una instalación normal. OpenCode descargará y
+mantendrá el plugin en su propia caché.
+
+#### Paso 3. Prepara las carpetas y archivos
+
+```sh
+mkdir -p ~/.config/opencode/assets/images ~/.config/opencode/assets/sounds
+```
+
+Guarda los recursos con esta estructura:
+
+```text
+/home/TU_USUARIO/.config/opencode/
+├── opencode.jsonc
+├── notify.json
+└── assets/
+    ├── images/
+    │   └── popup.png
+    └── sounds/
+        ├── complete.wav
+        ├── error.wav
+        └── attention.wav
+```
+
+El PNG debe medir exactamente `64x64` y pesar como máximo 2 MB. Puedes leer las
+dimensiones directamente desde su cabecera sin instalar otra biblioteca:
+
+```sh
+python3 -c "import struct; f=open('$HOME/.config/opencode/assets/images/popup.png','rb'); f.seek(16); print('%dx%d' % struct.unpack('>II', f.read(8)))"
+```
+
+El resultado esperado es `64x64`. Para el sonido, WAV es la opción más portable.
+Prueba el archivo con el reproductor encontrado en el paso anterior, por ejemplo:
+
+```sh
+canberra-gtk-play -f "$HOME/.config/opencode/assets/sounds/complete.wav"
+```
+
+También puedes usar `paplay`, `pw-play`, `ffplay -nodisp -autoexit` o `aplay`,
+según lo que esté instalado.
+
+#### Paso 4. Crea `notify.json`
+
+Crea `~/.config/opencode/notify.json` y reemplaza `TU_USUARIO` por tu usuario
+real:
+
+```json
+{
+  "events": {
+    "complete": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "error": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "permission": { "system": true, "sound": true, "popup": true, "titleFlash": false },
+    "question": { "system": true, "sound": true, "popup": true, "titleFlash": false }
+  },
+  "sounds": {
+    "complete": "/home/TU_USUARIO/.config/opencode/assets/sounds/complete.wav",
+    "error": "/home/TU_USUARIO/.config/opencode/assets/sounds/error.wav",
+    "permission": "/home/TU_USUARIO/.config/opencode/assets/sounds/attention.wav",
+    "question": "/home/TU_USUARIO/.config/opencode/assets/sounds/attention.wav"
+  },
+  "popup": {
+    "blinkColors": ["#0F172A", "#1E293B"],
+    "blinkIntervalMs": 600,
+    "fontFamily": "DejaVu Sans",
+    "fontSize": 12,
+    "textColor": "#FFFFFF",
+    "opacity": 1,
+    "image": {
+      "enabled": true,
+      "path": "./assets/images/popup.png",
+      "position": "left"
+    },
+    "events": {
+      "complete": { "blinkColors": ["#14532D", "#22C55E"], "textColor": "#FFFFFF" },
+      "error": {
+        "blinkColors": ["#7F1D1D", "#EF4444"],
+        "textColor": "#FFFFFF",
+        "image": { "position": "right" }
+      },
+      "permission": { "blinkColors": ["#78350F", "#F59E0B"], "textColor": "#111827" },
+      "question": { "blinkColors": ["#312E81", "#6366F1"], "textColor": "#FFFFFF" }
+    }
+  }
+}
+```
+
+Dentro de JSON, `~` y `$HOME` son texto normal y no se expanden. Por eso los
+sonidos usan rutas absolutas. La imagen sí puede usar una ruta relativa porque el
+plugin la resuelve desde la carpeta de `notify.json`.
+
+Para cambiar los colores, edita `popup.events.<evento>.blinkColors`. Un solo
+color deja el fondo estático; dos o más colores activan el parpadeo con la
+velocidad de `blinkIntervalMs`. Ajusta también `textColor` para mantener una buena
+legibilidad.
+
+Para ver las fuentes instaladas puedes ejecutar:
+
+```sh
+fc-list : family | sort -u
+```
+
+Reemplaza `DejaVu Sans` por cualquier familia disponible si quieres cambiar la
+tipografía.
+
+#### Paso 5. Reinicia y reconoce el backend
+
+Cierra OpenCode por completo y vuelve a iniciarlo. Si ves el fondo coloreado y la
+imagen junto al texto, se está utilizando Tkinter. Un diálogo de Zenity o una
+notificación convencional indican que entró uno de los respaldos; seguirás
+recibiendo el aviso, pero el escritorio controlará buena parte de su apariencia.
+
+Si no aparece el toast del sistema, confirma que tu sesión gráfica tenga un
+servicio de notificaciones activo. Si no suena el audio, ejecuta manualmente el
+archivo con el backend detectado y revisa el volumen de la sesión.
+
+### Variaciones útiles para ambas guías
+
+Para usar una imagen distinta en cada evento, reemplaza solo `path`:
+
+```json
+{
+  "popup": {
+    "image": { "enabled": true, "path": "./assets/images/default.png", "position": "left" },
+    "events": {
+      "complete": { "image": { "path": "./assets/images/complete.png" } },
+      "error": { "image": { "path": "./assets/images/error.png", "position": "right" } },
+      "permission": { "image": { "enabled": false } }
+    }
+  }
+}
+```
+
+Para quitar el sonido de un evento, el interruptor correcto está en `events`:
+
+```json
+{
+  "events": {
+    "complete": { "sound": false }
+  }
+}
+```
+
+La propiedad `messages.<evento>.icon` configura el icono del toast del sistema;
+`popup.image` configura la imagen de la ventana personalizable. Son funciones
+independientes.
+
+> [!IMPORTANT]
+> `notify.json` usa JSON estricto, por lo que no admite comentarios ni comas
+> finales. Reinicia OpenCode después de cada cambio; la configuración se lee una
+> sola vez durante la ejecución.
 
 ## Personalización
 
@@ -200,6 +599,7 @@ Esta es una configuración inicial completa, igual a la incluida en
     "fontSize": 12,
     "textColor": "#111111",
     "opacity": 1,
+    "image": { "enabled": false, "position": "left" },
     "events": {
       "complete": { "blinkColors": ["#14532D", "#22C55E"], "textColor": "#FFFFFF" },
       "error": { "blinkColors": ["#7F1D1D", "#EF4444"], "textColor": "#FFFFFF" },
@@ -377,6 +777,59 @@ ruta opcional utilizada por la notificación del sistema.
 
 ### Estilo del popup
 
+#### Imagen PNG
+
+El popup admite una imagen PNG global para todos los eventos:
+
+```json
+{
+  "popup": {
+    "image": {
+      "enabled": true,
+      "path": "./images/opencode.png",
+      "position": "left"
+    }
+  }
+}
+```
+
+Cada evento puede reemplazar la ruta o posición global, o desactivar la imagen:
+
+```json
+{
+  "popup": {
+    "image": {
+      "enabled": true,
+      "path": "./images/default.png",
+      "position": "left"
+    },
+    "events": {
+      "complete": {
+        "image": { "path": "./images/complete.png" }
+      },
+      "error": {
+        "image": { "path": "C:/Images/error.png", "position": "right" }
+      },
+      "permission": {
+        "image": { "enabled": false }
+      }
+    }
+  }
+}
+```
+
+- Solo se admiten archivos PNG locales de exactamente `64x64` píxeles y hasta 2 MB.
+- `position` acepta `left` o `right`; cualquier otro valor usa `left`.
+- Las rutas relativas se resuelven desde la carpeta que contiene `notify.json`.
+- Una imagen específica hereda los campos omitidos de la imagen global.
+- Si el archivo falta o no es válido, el popup continúa funcionando solo con texto.
+- En Linux, la imagen completa requiere Tkinter; los fallbacks la usan como icono.
+
+La propiedad `messages.<evento>.icon` continúa siendo independiente y pertenece
+al toast del sistema.
+
+#### Campos disponibles
+
 | Campo | Tipo | Descripción |
 | --- | --- | --- |
 | `blinkColors` | `string[]` | Colores hexadecimales del fondo; usa al menos uno |
@@ -385,6 +838,7 @@ ruta opcional utilizada por la notificación del sistema.
 | `fontSize` | número | Tamaño del texto |
 | `textColor` | texto | Color hexadecimal del texto |
 | `opacity` | número | Opacidad entre `0.2` y `1` |
+| `image` | objeto | PNG opcional global de `64x64`, con posición izquierda o derecha |
 | `events` | objeto | Reemplazos parciales para cada tipo de evento |
 
 Los campos globales funcionan como base. `popup.events.<evento>` reemplaza solo
@@ -401,7 +855,7 @@ repetir fuente, tamaño u opacidad.
 | Función | Windows | Linux | macOS |
 | --- | --- | --- | --- |
 | Toast del sistema | Persistente y cerrable por ID | Transitorio mediante `notify-send` | Notification Center |
-| Popup | WinForms, estilizado y sin robar foco | Tkinter, con fallbacks | Alerta de AppleScript |
+| Popup | WinForms, PNG y estilos | Tkinter con PNG y fallbacks básicos | Alerta de AppleScript |
 | Sonido predeterminado | PowerShell | Backend disponible | `afplay` |
 | Sonido personalizado | WAV con `Media.SoundPlayer` | Varios reproductores | Formatos compatibles con `afplay` |
 | Restaurar terminal desde el aviso | Sí | No garantizado | Terminal.app |
@@ -414,20 +868,9 @@ minimizada.
 
 El plugin intenta Tkinter, luego Zenity y finalmente `notify-send`. Para sonido
 detecta `canberra-gtk-play`, `paplay`, `pw-play`, `aplay`, `ffplay` o `beep`.
-
-```sh
-# Debian / Ubuntu
-sudo apt install python3-tk libcanberra-gtk3-module libnotify-bin zenity
-
-# Fedora
-sudo dnf install python3-tkinter libcanberra-gtk3 libnotify zenity
-
-# Arch Linux
-sudo pacman -S tk libcanberra libnotify zenity
-```
-
-No es obligatorio instalar todos los paquetes. Basta con un backend gráfico y
-uno de audio disponibles en tu entorno.
+No es obligatorio instalarlos todos: basta con un backend gráfico y uno de
+audio. La [guía de Linux](#guia-linux) incluye los paquetes exactos para Debian,
+Ubuntu, Fedora y Arch, junto con comandos de comprobación.
 
 ## Solución de problemas
 

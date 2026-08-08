@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { open, stat } from "node:fs/promises";
+import { extname } from "node:path";
 import type { NotificationMessage } from "../../domain/entity/NotificationMessage.js";
 import type { PopupStyle } from "../../domain/entity/PopupStyle.js";
+import type { Logger } from "../../domain/port/out/Logger.js";
 import type { NotifierConfig } from "../../domain/port/out/NotifierConfig.js";
 import type { PersistentPopup } from "../../domain/port/out/PersistentPopup.js";
 import { LINUX_POPUP_PY, LINUX_POPUP_SH } from "../../helpers/linux/popup.js";
@@ -9,12 +12,14 @@ import { DEFAULT_POPUP_CONFIG } from "../config/defaultNotifyConfig.js";
 
 export class NativePersistentPopup implements PersistentPopup {
   private static readonly ACTIVATED_EXIT_CODE = 10;
+  private static readonly MAX_PNG_BYTES = 2 * 1024 * 1024;
   private active: ChildProcess | undefined;
 
   constructor(
     private readonly config?: NotifierConfig,
     private readonly platform: NodeJS.Platform = process.platform,
     private readonly onActivate?: () => void,
+    private readonly logger?: Logger,
   ) {}
 
   async show(message: NotificationMessage): Promise<void> {
@@ -56,11 +61,13 @@ export class NativePersistentPopup implements PersistentPopup {
   }
 
   private async env(message: NotificationMessage): Promise<NodeJS.ProcessEnv> {
+    const style = await this.style(message);
     return {
       ...process.env,
       POPUP_TITLE: message.title,
       POPUP_MESSAGE: message.message,
-      POPUP_STYLE: JSON.stringify(await this.style(message)),
+      POPUP_STYLE: JSON.stringify(style),
+      POPUP_IMAGE_PATH: style.image.enabled ? style.image.path : "",
       POPUP_LINUX_SCRIPT: LINUX_POPUP_PY,
     };
   }
@@ -68,7 +75,53 @@ export class NativePersistentPopup implements PersistentPopup {
   private async style(message: NotificationMessage): Promise<PopupStyle> {
     const popup = this.config ? (await this.config.get()).popup : DEFAULT_POPUP_CONFIG;
     const { events, ...globalStyle } = popup;
-    return { ...globalStyle, ...events[message.kind] };
+    const override = events[message.kind];
+    const image = { ...globalStyle.image, ...override?.image };
+    return this.validateImage({
+      ...globalStyle,
+      ...override,
+      image: { ...image, position: image.position === "right" ? "right" : "left" },
+    });
+  }
+
+  private async validateImage(style: PopupStyle): Promise<PopupStyle> {
+    const path = style.image.path;
+    if (!style.image.enabled) return style;
+    if (!path) return this.disableImage(style, "missing path");
+    if (extname(path).toLowerCase() !== ".png") return this.disableImage(style, "only PNG files are supported");
+
+    try {
+      const fileStat = await stat(path);
+      if (!fileStat.isFile()) return this.disableImage(style, "path is not a file");
+      if (fileStat.size > NativePersistentPopup.MAX_PNG_BYTES) {
+        return this.disableImage(style, "file exceeds 2 MB");
+      }
+
+      const handle = await open(path, "r");
+      try {
+        const header = Buffer.alloc(24);
+        const { bytesRead } = await handle.read(header, 0, header.length, 0);
+        const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        const validHeader =
+          bytesRead === header.length &&
+          header.subarray(0, signature.length).equals(signature) &&
+          header.toString("ascii", 12, 16) === "IHDR";
+        if (!validHeader) return this.disableImage(style, "invalid PNG header");
+        const width = header.readUInt32BE(16);
+        const height = header.readUInt32BE(20);
+        if (width !== 64 || height !== 64) return this.disableImage(style, `expected 64x64, received ${width}x${height}`);
+      } finally {
+        await handle.close();
+      }
+    } catch (error) {
+      return this.disableImage(style, error instanceof Error ? error.message : String(error));
+    }
+    return style;
+  }
+
+  private disableImage(style: PopupStyle, reason: string): PopupStyle {
+    this.logger?.warn(`popup image ignored (${reason}): ${style.image.path ?? "<empty>"}`);
+    return { ...style, image: { ...style.image, enabled: false } };
   }
 
   private command(message: NotificationMessage): string[] | undefined {
@@ -109,7 +162,7 @@ export class NativePersistentPopup implements PersistentPopup {
       "try {",
       "$script:lastFg = [Focuser]::GetForegroundWindow()",
       "$styleJson = $env:POPUP_STYLE",
-      'if (-not $styleJson) { $styleJson = \'{"blinkColors":["#FFC800","#FF5050"],"blinkIntervalMs":600,"fontFamily":"Segoe UI","fontSize":12,"textColor":"#111111","opacity":1}\' }',
+      'if (-not $styleJson) { $styleJson = \'{"blinkColors":["#FFC800","#FF5050"],"blinkIntervalMs":600,"fontFamily":"Segoe UI","fontSize":12,"textColor":"#111111","opacity":1,"image":{"enabled":false,"position":"left"}}\' }',
       "$style = $styleJson | ConvertFrom-Json",
       "$title = $env:POPUP_TITLE",
       "$message = $env:POPUP_MESSAGE",
@@ -132,12 +185,55 @@ export class NativePersistentPopup implements PersistentPopup {
       '$label.Text = $title + "`n`n" + $message',
       "$label.Font = $font",
       "$label.ForeColor = [System.Drawing.ColorTranslator]::FromHtml($style.textColor)",
-      "$label.Padding = New-Object System.Windows.Forms.Padding(20)",
       "$label.AutoSize = $true",
-      "$form.Controls.Add($label)",
+      "$label.BackColor = [System.Drawing.Color]::Transparent",
+      "$picture = $null",
+      "$content = $null",
+      "$imageLoaded = $false",
+      "if ($style.image.enabled -and $style.image.path -and (Test-Path -LiteralPath $style.image.path -PathType Leaf)) {",
+      "  try {",
+      "    $picture = New-Object System.Windows.Forms.PictureBox",
+      "    $picture.Width = 64",
+      "    $picture.Height = 64",
+      '    $picture.SizeMode = "Zoom"',
+      "    $picture.BackColor = [System.Drawing.Color]::Transparent",
+      "    $sourceImage = [System.Drawing.Image]::FromFile([string]$style.image.path)",
+      "    try { $picture.Image = [System.Drawing.Bitmap]::new($sourceImage) } finally { $sourceImage.Dispose() }",
+      "    $content = New-Object System.Windows.Forms.FlowLayoutPanel",
+      "    $content.AutoSize = $true",
+      '    $content.AutoSizeMode = "GrowAndShrink"',
+      '    $content.FlowDirection = "LeftToRight"',
+      "    $content.WrapContents = $false",
+      "    $content.Margin = [System.Windows.Forms.Padding]::new(0)",
+      "    $content.Padding = [System.Windows.Forms.Padding]::new(0)",
+      "    $content.BackColor = [System.Drawing.Color]::Transparent",
+      '    if ($style.image.position -eq "right") {',
+      "      $label.Padding = [System.Windows.Forms.Padding]::new(20, 20, 12, 20)",
+      "      $picture.Margin = [System.Windows.Forms.Padding]::new(0, 20, 20, 20)",
+      "      $content.Controls.Add($label) | Out-Null",
+      "      $content.Controls.Add($picture) | Out-Null",
+      "    } else {",
+      "      $picture.Margin = [System.Windows.Forms.Padding]::new(20, 20, 0, 20)",
+      "      $label.Padding = [System.Windows.Forms.Padding]::new(12, 20, 20, 20)",
+      "      $content.Controls.Add($picture) | Out-Null",
+      "      $content.Controls.Add($label) | Out-Null",
+      "    }",
+      "    $form.Controls.Add($content)",
+      "    $imageLoaded = $true",
+      "  } catch {",
+      "    if ($picture -and $picture.Image) { $picture.Image.Dispose() }",
+      "    $picture = $null",
+      "    $content = $null",
+      "  }",
+      "}",
+      "if (-not $imageLoaded) {",
+      "  $label.Padding = [System.Windows.Forms.Padding]::new(20)",
+      "  $form.Controls.Add($label)",
+      "}",
       "$script:activated = $false",
       '$colors = @($style.blinkColors | ForEach-Object { [System.Drawing.ColorTranslator]::FromHtml($_) })',
       "if ($colors.Count -ge 2) {",
+      "  $form.BackColor = $colors[0]",
       "  $timer = New-Object System.Windows.Forms.Timer",
       "  $timer.Interval = [int]$style.blinkIntervalMs",
       "  if ($timer.Interval -lt 100) { $timer.Interval = 100 }",
@@ -150,8 +246,12 @@ export class NativePersistentPopup implements PersistentPopup {
       "} else {",
       "  $form.BackColor = $colors[0]",
       "}",
-      "$form.Add_Click({ $script:activated = $true; Add-Content -Path $diag -Value \"click fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; Add-Content -Path $diag -Value \"after-focus fg=$([Focuser]::GetForegroundWindow())\"; $form.Close() })",
-      "$label.Add_Click({ $script:activated = $true; Add-Content -Path $diag -Value \"click-label fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; $form.Close() })",
+      "$activatePopup = { $script:activated = $true; Add-Content -Path $diag -Value \"click fg=$([Focuser]::GetForegroundWindow()) target=$script:target\"; Focus-Terminal; $form.Close() }",
+      "$form.Add_Click($activatePopup)",
+      "$label.Add_Click($activatePopup)",
+      "if ($content) { $content.Add_Click($activatePopup) }",
+      "if ($picture) { $picture.Add_Click($activatePopup) }",
+      "$form.Add_FormClosed({ if ($picture -and $picture.Image) { $picture.Image.Dispose() } })",
       "if ($script:target -ne [IntPtr]::Zero) {",
       "  $focusTimer = New-Object System.Windows.Forms.Timer",
       "  $focusTimer.Interval = 150",

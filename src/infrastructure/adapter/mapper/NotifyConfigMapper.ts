@@ -13,6 +13,17 @@ export class NotifyConfigMapper {
       ...DEFAULT_NOTIFY_CONFIG.messages[type],
       ...source.messages?.[type],
     });
+    const popupEvent = (type: EventType) => {
+      const defaults = DEFAULT_NOTIFY_CONFIG.popup.events[type];
+      const override = source.popup?.events?.[type];
+      if (!defaults) return override;
+      if (!override) return defaults;
+      return {
+        ...defaults,
+        ...override,
+        image: defaults.image || override.image ? { ...defaults.image, ...override.image } : undefined,
+      };
+    };
     return {
       cooldownMs: source.cooldownMs ?? DEFAULT_NOTIFY_CONFIG.cooldownMs,
       onlyMainSessions: source.onlyMainSessions ?? DEFAULT_NOTIFY_CONFIG.onlyMainSessions,
@@ -22,7 +33,13 @@ export class NotifyConfigMapper {
       popup: {
         ...DEFAULT_NOTIFY_CONFIG.popup,
         ...source.popup,
-        events: { ...DEFAULT_NOTIFY_CONFIG.popup.events, ...source.popup?.events },
+        image: { ...DEFAULT_NOTIFY_CONFIG.popup.image, ...source.popup?.image },
+        events: {
+          [EventType.Complete]: popupEvent(EventType.Complete),
+          [EventType.Error]: popupEvent(EventType.Error),
+          [EventType.Permission]: popupEvent(EventType.Permission),
+          [EventType.Question]: popupEvent(EventType.Question),
+        },
       },
       sounds: { ...DEFAULT_NOTIFY_CONFIG.sounds, ...source.sounds },
       events: {

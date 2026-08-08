@@ -27,7 +27,7 @@ const opencodeNotify: Plugin = async ({ client }, options) => {
   const soundPlayer = new NativeSoundPlayer();
   const popup = new NativePersistentPopup(config, process.platform, () => {
     void sender.dismiss().catch((error) => logger.warn(`notification dismissal failed: ${String(error)}`));
-  });
+  }, logger);
   const titleFlasher = new AnsiTitleFlasher(config);
   const handler = new NotifyOnEventUseCase(sender, soundPlayer, popup, titleFlasher, sessions, config, logger);
   const controller = new EventController(handler);
